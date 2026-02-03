@@ -71,32 +71,64 @@ CREATE POLICY "Anyone can view sportsbooks"
     ON sportsbooks FOR SELECT
     USING (true);
 
-CREATE POLICY "System can manage sportsbooks"
-    ON sportsbooks FOR ALL
+CREATE POLICY "System can insert sportsbooks"
+    ON sportsbooks FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update sportsbooks"
+    ON sportsbooks FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete sportsbooks"
+    ON sportsbooks FOR DELETE
     USING (auth.role() = 'service_role');
 
 CREATE POLICY "Anyone can view events"
     ON events FOR SELECT
     USING (true);
 
-CREATE POLICY "System can manage events"
-    ON events FOR ALL
+CREATE POLICY "System can insert events"
+    ON events FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update events"
+    ON events FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete events"
+    ON events FOR DELETE
     USING (auth.role() = 'service_role');
 
 CREATE POLICY "Anyone can view odds"
     ON odds_snapshots FOR SELECT
     USING (true);
 
-CREATE POLICY "System can manage odds"
-    ON odds_snapshots FOR ALL
+CREATE POLICY "System can insert odds"
+    ON odds_snapshots FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update odds"
+    ON odds_snapshots FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete odds"
+    ON odds_snapshots FOR DELETE
     USING (auth.role() = 'service_role');
 
 CREATE POLICY "Anyone can view picks"
     ON picks FOR SELECT
     USING (true);
 
-CREATE POLICY "System can manage picks"
-    ON picks FOR ALL
+CREATE POLICY "System can insert picks"
+    ON picks FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update picks"
+    ON picks FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete picks"
+    ON picks FOR DELETE
     USING (auth.role() = 'service_role');
 
 -- Audit logs policies
@@ -164,8 +196,16 @@ CREATE POLICY "Anyone can view published news"
     ON news_articles FOR SELECT
     USING (is_published = true);
 
-CREATE POLICY "System can manage news articles"
-    ON news_articles FOR ALL
+CREATE POLICY "System can insert news articles"
+    ON news_articles FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update news articles"
+    ON news_articles FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete news articles"
+    ON news_articles FOR DELETE
     USING (auth.role() = 'service_role');
 
 -- Player news policies
@@ -173,8 +213,16 @@ CREATE POLICY "Anyone can view player news"
     ON player_news FOR SELECT
     USING (true);
 
-CREATE POLICY "System can manage player news"
-    ON player_news FOR ALL
+CREATE POLICY "System can insert player news"
+    ON player_news FOR INSERT
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "System can update player news"
+    ON player_news FOR UPDATE
+    USING (auth.role() = 'service_role');
+
+CREATE POLICY "System can delete player news"
+    ON player_news FOR DELETE
     USING (auth.role() = 'service_role');
 
 -- Add full-text search index for news

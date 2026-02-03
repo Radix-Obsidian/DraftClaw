@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -39,11 +39,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchNews();
-  }, [sport, category, limit]);
-
-  const fetchNews = async () => {
+  const fetchNews = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -56,6 +52,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
       if (data.success) {
         setArticles(data.data ?? []);
+        setError(null);
       } else {
         setError(data.error ?? 'Unknown error');
       }
@@ -64,7 +61,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [sport, category, limit]);
+
+  useEffect(() => {
+    fetchNews();
+  }, [fetchNews]);
 
   const getSportColor = (sport: string) => {
     switch (sport) {
@@ -83,6 +84,15 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       case 'betting': return '💰';
       default: return '📰';
     }
+  };
+
+  const featuredArticles = articles.filter(a => a.is_featured);
+  const regularArticles = articles.filter(a => !a.is_featured);
+
+  const formatPublishedAt = (publishedAt: string) => {
+    const date = new Date(publishedAt);
+    if (Number.isNaN(date.getTime())) return '';
+    return format(date, 'MMM d, yyyy • h:mm a');
   };
 
   if (loading) {
@@ -119,11 +129,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       )}
       
       {/* Featured Articles */}
-      {showFeatured && articles.filter(a => a.is_featured).length > 0 && (
+      {showFeatured && featuredArticles.length > 0 && (
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-4">Featured</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {articles.filter(a => a.is_featured).map(article => (
+            {featuredArticles.map(article => (
               <a
                 key={article.id}
                 href={`/news/${article.slug}`}
@@ -135,7 +145,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 <h3 className="text-xl font-bold mb-2">{article.title}</h3>
                 <p className="text-sm opacity-80">{article.summary}</p>
                 <p className="text-xs mt-4 opacity-60">
-                  {format(new Date(article.published_at), 'MMM d, yyyy • h:mm a')}
+                  {formatPublishedAt(article.published_at)}
                 </p>
               </a>
             ))}
@@ -145,7 +155,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
       {/* Regular Articles */}
       <div className="space-y-4">
-        {articles.filter(a => !a.is_featured).map(article => (
+        {regularArticles.map(article => (
           <a
             key={article.id}
             href={`/news/${article.slug}`}
@@ -169,7 +179,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                   {article.summary}
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  {format(new Date(article.published_at), 'MMM d, yyyy • h:mm a')}
+                  {formatPublishedAt(article.published_at)}
                 </p>
               </div>
             </div>

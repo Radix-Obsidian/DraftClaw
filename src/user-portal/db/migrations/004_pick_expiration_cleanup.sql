@@ -31,7 +31,7 @@ END;
 $$ language 'plpgsql';
 
 -- Add index for expired picks query optimization
-CREATE INDEX IF NOT EXISTS idx_picks_expires_at ON picks(expires_at) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_picks_expires_at_active ON picks(expires_at) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_picks_event_commence ON picks(event_id) WHERE is_active = true;
 
 -- Add index for cleanup queries

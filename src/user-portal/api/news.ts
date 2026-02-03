@@ -7,10 +7,18 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const coerceNonNegativeInt = (value: unknown, fallback: number) => {
+  const n = typeof value === 'string' ? parseInt(value, 10) : Number(value);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return fallback;
+  return Math.max(0, Math.floor(n));
+};
+
 // Get latest news articles
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { sport, category, limit = 10, offset = 0 } = req.query;
+    const { sport, category } = req.query;
+    const limit = coerceNonNegativeInt(req.query.limit, 10);
+    const offset = coerceNonNegativeInt(req.query.offset, 0);
 
     let query = `
       SELECT 
@@ -53,16 +61,25 @@ router.get('/', async (req: Request, res: Response) => {
     const { rows } = await pool.query(query, params);
 
     // Get total count for pagination
-    const countQuery = `
+    let countQuery = `
       SELECT COUNT(*) FROM news_articles na
       WHERE na.is_published = true
-      ${sport ? `AND na.sport = $1` : ''}
-      ${category ? `AND na.category = ${sport ? '$2' : '$1'}` : ''}
     `;
-    const countParams = [
-      ...(sport ? [sport] : []),
-      ...(category ? [category] : [])
-    ];
+    const countParams: any[] = [];
+    let countParamIndex = 1;
+
+    if (sport) {
+      countQuery += ` AND na.sport = $${countParamIndex}`;
+      countParams.push(sport);
+      countParamIndex++;
+    }
+
+    if (category) {
+      countQuery += ` AND na.category = $${countParamIndex}`;
+      countParams.push(category);
+      countParamIndex++;
+    }
+
     const { rows: countRows } = await pool.query(countQuery, countParams);
 
     res.json({
@@ -70,42 +87,13 @@ router.get('/', async (req: Request, res: Response) => {
       data: rows,
       pagination: {
         total: parseInt(countRows[0].count),
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string)
+        limit,
+        offset
       }
     });
   } catch (error) {
     logger.error('Error fetching news:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch news' });
-  }
-});
-
-// Get single news article by slug
-router.get('/:slug', async (req: Request, res: Response) => {
-  try {
-    const { slug } = req.params;
-
-    const { rows } = await pool.query(`
-      SELECT 
-        na.*,
-        pn.player_name,
-        pn.player_team,
-        pn.injury_status,
-        pn.status_update,
-        pn.impact_analysis
-      FROM news_articles na
-      LEFT JOIN player_news pn ON na.id = pn.article_id
-      WHERE na.slug = $1 AND na.is_published = true
-    `, [slug]);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Article not found' });
-    }
-
-    res.json({ success: true, data: rows[0] });
-  } catch (error) {
-    logger.error('Error fetching article:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch article' });
   }
 });
 
@@ -138,7 +126,7 @@ router.get('/featured', async (req: Request, res: Response) => {
 router.get('/players/:sport', async (req: Request, res: Response) => {
   try {
     const { sport } = req.params;
-    const { limit = 10 } = req.query;
+    const limit = coerceNonNegativeInt(req.query.limit, 10);
 
     const { rows } = await pool.query(`
       SELECT 
@@ -193,6 +181,35 @@ router.get('/search', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error searching news:', error);
     res.status(500).json({ success: false, error: 'Failed to search news' });
+  }
+});
+
+// Get single news article by slug
+router.get('/:slug', async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+
+    const { rows } = await pool.query(`
+      SELECT 
+        na.*,
+        pn.player_name,
+        pn.player_team,
+        pn.injury_status,
+        pn.status_update,
+        pn.impact_analysis
+      FROM news_articles na
+      LEFT JOIN player_news pn ON na.id = pn.article_id
+      WHERE na.slug = $1 AND na.is_published = true
+    `, [slug]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Article not found' });
+    }
+
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    logger.error('Error fetching article:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch article' });
   }
 });
 
