@@ -1,0 +1,38 @@
+{
+  "id": "draft-claw",
+  "name": "DraftClaw NBA Engine",
+  "description": "Autonomous EV analyzer for NBA markets.",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "apiKey": {
+        "type": "string",
+        "description": "The-Odds-API Key"
+      },
+      "mockMode": {
+        "type": "boolean",
+        "default": true,
+        "description": "Use mock data instead of live API"
+      },
+      "minEdgePercentage": {
+        "type": "number",
+        "default": 2.5,
+        "description": "Minimum edge percentage to report"
+      },
+      "affiliates": {
+        "type": "object",
+        "properties": {
+          "fanduel": {
+            "type": "string",
+            "description": "FanDuel affiliate tracking ID"
+          },
+          "draftkings": {
+            "type": "string",
+            "description": "DraftKings affiliate tracking ID"
+          }
+        }
+      }
+    },
+    "required": ["apiKey"]
+  }
+}

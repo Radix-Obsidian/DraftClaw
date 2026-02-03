@@ -1,0 +1,34 @@
+{
+  "name": "@draftclaw/nostr",
+  "version": "2026.2.1",
+  "description": "DraftClaw Nostr channel plugin for NIP-04 encrypted DMs",
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "^2.22.1",
+    "draftclaw": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "nostr",
+      "label": "Nostr",
+      "selectionLabel": "Nostr (NIP-04 DMs)",
+      "docsPath": "/channels/nostr",
+      "docsLabel": "nostr",
+      "blurb": "Decentralized protocol; encrypted DMs via NIP-04.",
+      "order": 55,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@draftclaw/nostr",
+      "localPath": "extensions/nostr",
+      "defaultChoice": "npm"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+name: 💡 Feature Request
+description: Suggest a new feature or enhancement for DraftClaw
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a new feature! Please fill out this form as completely as possible.
+
+  - type: checkboxes
+    attributes:
+      label: Prerequisites
+      description: Please check the following before submitting a feature request
+      options:
+        - label: I have checked that this feature has not already been requested
+          required: true
+        - label: I have read the [CONTRIBUTING guidelines](../CONTRIBUTING.md)
+          required: true
+        - label: This is a single feature (not multiple features combined)
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: Feature Category
+      description: What area does this feature primarily relate to?
+      options:
+        - Sports Analytics
+        - Betting Analysis
+        - User Interface
+        - Performance
+        - Integration
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? Please describe.
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see
+      placeholder: "It would be great if DraftClaw could..."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Alternative Solutions
+      description: Describe any alternative solutions you've considered
+      placeholder: "I've thought about doing it this way instead..."
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request here
+    validations:
+      required: false
+
+  - type: dropdown
+    attributes:
+      label: Impact Level
+      description: How impactful would this feature be?
+      options:
+        - Critical (Enables new use cases)
+        - High (Major improvement)
+        - Medium (Nice to have)
+        - Low (Minor enhancement)
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Implementation Complexity
+      description: How complex do you think this would be to implement?
+      options:
+        - Simple (Few files/changes)
+        - Moderate (Several components)
+        - Complex (Major architectural changes)
+        - Unknown
+    validations:
+      required: true

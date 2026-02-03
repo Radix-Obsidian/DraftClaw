@@ -1,0 +1,737 @@
+/* DraftClaw Sports UI Styles */
+
+/* ============================================
+   TICKER TAPE
+   ============================================ */
+.ticker-tape {
+  background: var(--bg-accent);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  padding: 12px 0;
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  height: 48px;
+}
+
+.ticker-tape::before,
+.ticker-tape::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ticker-tape::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-accent), transparent);
+}
+
+.ticker-tape::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-accent), transparent);
+}
+
+.ticker-tape__track {
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+}
+
+.ticker-tape__content {
+  display: flex;
+  gap: 32px;
+  animation: ticker-scroll 30s linear infinite;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+.ticker-item {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.ticker-item--win {
+  color: var(--lock);
+}
+
+.ticker-item--loss {
+  color: var(--trap);
+}
+
+.ticker-item--pending {
+  color: var(--longshot);
+}
+
+/* ============================================
+   MONEYBALL METER
+   ============================================ */
+.moneyball-meter {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  margin-bottom: 16px;
+}
+
+.moneyball-meter__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.moneyball-meter__icon {
+  font-size: 20px;
+}
+
+.moneyball-meter__label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.moneyball-meter__level {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.meter--high .moneyball-meter__level {
+  color: var(--lock);
+}
+
+.meter--medium .moneyball-meter__level {
+  color: var(--longshot);
+}
+
+.meter--low .moneyball-meter__level {
+  color: var(--trap);
+}
+
+.moneyball-meter__bar {
+  height: 8px;
+  background: var(--bg-muted);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.moneyball-meter__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.6s var(--ease-out);
+}
+
+.meter--high .moneyball-meter__fill {
+  background: linear-gradient(90deg, var(--lock), #00cc92);
+}
+
+.meter--medium .moneyball-meter__fill {
+  background: linear-gradient(90deg, var(--longshot), #e6a800);
+}
+
+.meter--low .moneyball-meter__fill {
+  background: linear-gradient(90deg, var(--trap), #cc2f27);
+}
+
+.moneyball-meter__percent {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* ============================================
+   BETTING CARD
+   ============================================ */
+.betting-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+}
+
+.betting-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.betting-card--lock {
+  border-color: rgba(0, 255, 183, 0.3);
+}
+
+.betting-card--lock:hover {
+  box-shadow: var(--shadow-md), 0 0 20px rgba(0, 255, 183, 0.15);
+}
+
+.betting-card--longshot {
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.betting-card--longshot:hover {
+  box-shadow: var(--shadow-md), 0 0 20px rgba(251, 191, 36, 0.15);
+}
+
+.betting-card--trap {
+  border-color: rgba(255, 59, 48, 0.3);
+}
+
+.betting-card--trap:hover {
+  box-shadow: var(--shadow-md), 0 0 20px rgba(255, 59, 48, 0.15);
+}
+
+.betting-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.betting-card__type {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.betting-card--lock .betting-card__type {
+  color: var(--lock);
+}
+
+.betting-card--longshot .betting-card__type {
+  color: var(--longshot);
+}
+
+.betting-card--trap .betting-card__type {
+  color: var(--trap);
+}
+
+.betting-card__sport {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--bg-muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+}
+
+.betting-card__matchup {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.1;
+}
+
+.betting-card__time {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.betting-card__selection {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.betting-card__odds {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.betting-card__edge {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.edge--positive {
+  background: rgba(0, 255, 183, 0.1);
+  color: var(--lock);
+}
+
+.edge--negative {
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--trap);
+}
+
+.betting-card__confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confidence-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-muted);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.confidence-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width 0.4s var(--ease-out);
+}
+
+.confidence-label {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.betting-card__take {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  font-style: italic;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-accent);
+  border-radius: var(--radius-md);
+  border-left: 2px solid var(--accent);
+}
+
+.betting-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.betting-card__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: none;
+  transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out);
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.betting-card__cta:hover {
+  background: var(--accent-hover);
+  transform: scale(1.02);
+  text-decoration: none;
+}
+
+.betting-card--trap .betting-card__cta {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.betting-card--trap .betting-card__cta:hover {
+  background: var(--bg-hover);
+}
+
+/* ============================================
+   DAILY SHEET
+   ============================================ */
+.daily-sheet {
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.picks-section {
+  margin-bottom: 48px;
+}
+
+.picks-section__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 16px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--border);
+}
+
+.picks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.picks-grid--full {
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+}
+
+.daily-sheet__footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.disclaimer {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* ============================================
+   SPORT VIEW (NBA, UFC)
+   ============================================ */
+.sport-view {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sport-view__header {
+  margin-bottom: 32px;
+}
+
+.sport-view__title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.sport-view__title h1 {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.sport-view__icon {
+  font-size: 40px;
+}
+
+.sport-view__subtitle {
+  font-size: 16px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ============================================
+   RESULTS VIEW
+   ============================================ */
+.results-view {
+  padding: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.results-view__header {
+  margin-bottom: 32px;
+}
+
+.results-view__title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.results-view__title h1 {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.results-view__icon {
+  font-size: 40px;
+}
+
+.results-view__subtitle {
+  font-size: 16px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+}
+
+.stat-card__value {
+  font-family: var(--font-display);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.stat-card--wins .stat-card__value {
+  color: var(--lock);
+}
+
+.stat-card--losses .stat-card__value {
+  color: var(--trap);
+}
+
+.stat-card--rate .stat-card__value {
+  color: var(--accent-2);
+}
+
+.stat-card__label {
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.results-list__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 20px 0;
+}
+
+.results-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.result-item--win {
+  border-left: 3px solid var(--lock);
+}
+
+.result-item--loss {
+  border-left: 3px solid var(--trap);
+}
+
+.result-item--pending {
+  border-left: 3px solid var(--longshot);
+}
+
+.result-item__text {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.result-item__time {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ============================================
+   EMPTY & LOADING STATES
+   ============================================ */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  grid-column: 1 / -1;
+}
+
+.empty-state__icon {
+  font-size: 64px;
+  display: block;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--text-strong);
+  margin: 0 0 8px 0;
+}
+
+.empty-state p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+/* ============================================
+   MOBILE RESPONSIVE
+   ============================================ */
+@media (max-width: 768px) {
+  .ticker-tape {
+    padding: 8px 0;
+  }
+
+  .ticker-item {
+    font-size: 12px;
+    padding: 0 8px;
+  }
+
+  .picks-grid,
+  .picks-grid--full {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .betting-card {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .betting-card__matchup {
+    font-size: 14px;
+  }
+
+  .betting-card__selection {
+    font-size: 13px;
+  }
+
+  .betting-card__cta {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .moneyball-meter {
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+
+  .moneyball-meter__header {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .moneyball-meter__label {
+    font-size: 14px;
+  }
+
+  .moneyball-meter__level {
+    font-size: 18px;
+  }
+
+  .picks-section {
+    margin-bottom: 32px;
+  }
+
+  .picks-section__title {
+    font-size: 18px;
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+  }
+
+  .sport-view__title h1,
+  .results-view__title h1 {
+    font-size: 24px;
+  }
+
+  .daily-sheet,
+  .sport-view,
+  .results-view {
+    padding: 12px;
+  }
+
+  .daily-sheet__footer {
+    margin-top: 32px;
+    padding-top: 16px;
+  }
+
+  .disclaimer {
+    font-size: 11px;
+  }
+}
+
+/* Small mobile */
+@media (max-width: 480px) {
+  .ticker-item {
+    font-size: 11px;
+    padding: 0 6px;
+  }
+
+  .betting-card {
+    padding: 8px;
+  }
+
+  .betting-card__matchup {
+    font-size: 13px;
+  }
+
+  .picks-section__title {
+    font-size: 16px;
+  }
+
+  .moneyball-meter__level {
+    font-size: 16px;
+  }
+
+  .daily-sheet,
+  .sport-view,
+  .results-view {
+    padding: 8px;
+  }
+}

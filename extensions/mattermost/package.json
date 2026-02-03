@@ -1,0 +1,28 @@
+{
+  "name": "@draftclaw/mattermost",
+  "version": "2026.2.1",
+  "description": "DraftClaw Mattermost channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "mattermost",
+      "label": "Mattermost",
+      "selectionLabel": "Mattermost (plugin)",
+      "docsPath": "/channels/mattermost",
+      "docsLabel": "mattermost",
+      "blurb": "self-hosted Slack-style chat; install the plugin to enable.",
+      "order": 65
+    },
+    "install": {
+      "npmSpec": "@draftclaw/mattermost",
+      "localPath": "extensions/mattermost",
+      "defaultChoice": "npm"
+    }
+  }
+}

@@ -1,0 +1,1573 @@
+import AVFAudio
+import DraftClawChatUI
+import DraftClawKit
+import DraftClawProtocol
+import Foundation
+import Observation
+import OSLog
+import Speech
+
+@MainActor
+@Observable
+final class TalkModeManager: NSObject {
+    private typealias SpeechRequest = SFSpeechAudioBufferRecognitionRequest
+    private static let defaultModelIdFallback = "eleven_v3"
+    var isEnabled: Bool = false
+    var isListening: Bool = false
+    var isSpeaking: Bool = false
+    var isPushToTalkActive: Bool = false
+    var statusText: String = "Off"
+
+    private enum CaptureMode {
+        case idle
+        case continuous
+        case pushToTalk
+    }
+
+    private var captureMode: CaptureMode = .idle
+    private var resumeContinuousAfterPTT: Bool = false
+    private var activePTTCaptureId: String?
+    private var pttAutoStopEnabled: Bool = false
+    private var pttCompletion: CheckedContinuation<DraftClawTalkPTTStopPayload, Never>?
+    private var pttTimeoutTask: Task<Void, Never>?
+
+    private let allowSimulatorCapture: Bool
+
+    private let audioEngine = AVAudioEngine()
+    private var inputTapInstalled = false
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var silenceTask: Task<Void, Never>?
+
+    private var lastHeard: Date?
+    private var lastTranscript: String = ""
+    private var lastSpokenText: String?
+    private var lastInterruptedAtSeconds: Double?
+
+    private var defaultVoiceId: String?
+    private var currentVoiceId: String?
+    private var defaultModelId: String?
+    private var currentModelId: String?
+    private var voiceOverrideActive = false
+    private var modelOverrideActive = false
+    private var defaultOutputFormat: String?
+    private var apiKey: String?
+    private var voiceAliases: [String: String] = [:]
+    private var interruptOnSpeech: Bool = true
+    private var mainSessionKey: String = "main"
+    private var fallbackVoiceId: String?
+    private var lastPlaybackWasPCM: Bool = false
+    var pcmPlayer: PCMStreamingAudioPlaying = PCMStreamingAudioPlayer.shared
+    var mp3Player: StreamingAudioPlaying = StreamingAudioPlayer.shared
+
+    private var gateway: GatewayNodeSession?
+    private var gatewayConnected = false
+    private let silenceWindow: TimeInterval = 0.7
+
+    private var chatSubscribedSessionKeys = Set<String>()
+    private var incrementalSpeechQueue: [String] = []
+    private var incrementalSpeechTask: Task<Void, Never>?
+    private var incrementalSpeechActive = false
+    private var incrementalSpeechUsed = false
+    private var incrementalSpeechLanguage: String?
+    private var incrementalSpeechBuffer = IncrementalSpeechBuffer()
+    private var incrementalSpeechContext: IncrementalSpeechContext?
+    private var incrementalSpeechDirective: TalkDirective?
+
+    private let logger = Logger(subsystem: "bot.molt", category: "TalkMode")
+
+    init(allowSimulatorCapture: Bool = false) {
+        self.allowSimulatorCapture = allowSimulatorCapture
+        super.init()
+    }
+
+    func attachGateway(_ gateway: GatewayNodeSession) {
+        self.gateway = gateway
+    }
+
+    func updateGatewayConnected(_ connected: Bool) {
+        self.gatewayConnected = connected
+    }
+
+    func updateMainSessionKey(_ sessionKey: String?) {
+        let trimmed = (sessionKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if SessionKey.isCanonicalMainSessionKey(self.mainSessionKey) { return }
+        self.mainSessionKey = trimmed
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        self.isEnabled = enabled
+        if enabled {
+            self.logger.info("enabled")
+            Task { await self.start() }
+        } else {
+            self.logger.info("disabled")
+            self.stop()
+        }
+    }
+
+    func start() async {
+        guard self.isEnabled else { return }
+        guard self.captureMode != .pushToTalk else { return }
+        if self.isListening { return }
+
+        self.logger.info("start")
+        self.statusText = "Requesting permissions…"
+        let micOk = await Self.requestMicrophonePermission()
+        guard micOk else {
+            self.logger.warning("start blocked: microphone permission denied")
+            self.statusText = Self.permissionMessage(
+                kind: "Microphone",
+                status: AVAudioSession.sharedInstance().recordPermission)
+            return
+        }
+        let speechOk = await Self.requestSpeechPermission()
+        guard speechOk else {
+            self.logger.warning("start blocked: speech permission denied")
+            self.statusText = Self.permissionMessage(
+                kind: "Speech recognition",
+                status: SFSpeechRecognizer.authorizationStatus())
+            return
+        }
+
+        await self.reloadConfig()
+        do {
+            try Self.configureAudioSession()
+            try self.startRecognition()
+            self.isListening = true
+            self.captureMode = .continuous
+            self.statusText = "Listening"
+            self.startSilenceMonitor()
+            await self.subscribeChatIfNeeded(sessionKey: self.mainSessionKey)
+            self.logger.info("listening")
+        } catch {
+            self.isListening = false
+            self.statusText = "Start failed: \(error.localizedDescription)"
+            self.logger.error("start failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func stop() {
+        self.isEnabled = false
+        self.isListening = false
+        self.isPushToTalkActive = false
+        self.captureMode = .idle
+        self.statusText = "Off"
+        self.lastTranscript = ""
+        self.lastHeard = nil
+        self.silenceTask?.cancel()
+        self.silenceTask = nil
+        self.stopRecognition()
+        self.stopSpeaking()
+        self.lastInterruptedAtSeconds = nil
+        let pendingPTT = self.pttCompletion != nil
+        let pendingCaptureId = self.activePTTCaptureId ?? UUID().uuidString
+        self.pttTimeoutTask?.cancel()
+        self.pttTimeoutTask = nil
+        self.pttAutoStopEnabled = false
+        if pendingPTT {
+            let payload = DraftClawTalkPTTStopPayload(
+                captureId: pendingCaptureId,
+                transcript: nil,
+                status: "cancelled")
+            self.finishPTTOnce(payload)
+        }
+        self.resumeContinuousAfterPTT = false
+        self.activePTTCaptureId = nil
+        TalkSystemSpeechSynthesizer.shared.stop()
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            self.logger.warning("audio session deactivate failed: \(error.localizedDescription, privacy: .public)")
+        }
+        Task { await self.unsubscribeAllChats() }
+    }
+
+    func userTappedOrb() {
+        self.stopSpeaking()
+    }
+
+    func beginPushToTalk() async throws -> DraftClawTalkPTTStartPayload {
+        if self.isPushToTalkActive, let captureId = self.activePTTCaptureId {
+            return DraftClawTalkPTTStartPayload(captureId: captureId)
+        }
+
+        self.stopSpeaking(storeInterruption: false)
+        self.pttTimeoutTask?.cancel()
+        self.pttTimeoutTask = nil
+        self.pttAutoStopEnabled = false
+
+        self.resumeContinuousAfterPTT = self.isEnabled && self.captureMode == .continuous
+        self.silenceTask?.cancel()
+        self.silenceTask = nil
+        self.stopRecognition()
+        self.isListening = false
+
+        let captureId = UUID().uuidString
+        self.activePTTCaptureId = captureId
+        self.lastTranscript = ""
+        self.lastHeard = nil
+
+        self.statusText = "Requesting permissions…"
+        if !self.allowSimulatorCapture {
+            let micOk = await Self.requestMicrophonePermission()
+            guard micOk else {
+                self.statusText = Self.permissionMessage(
+                    kind: "Microphone",
+                    status: AVAudioSession.sharedInstance().recordPermission)
+                throw NSError(domain: "TalkMode", code: 4, userInfo: [
+                    NSLocalizedDescriptionKey: "Microphone permission denied",
+                ])
+            }
+            let speechOk = await Self.requestSpeechPermission()
+            guard speechOk else {
+                self.statusText = Self.permissionMessage(
+                    kind: "Speech recognition",
+                    status: SFSpeechRecognizer.authorizationStatus())
+                throw NSError(domain: "TalkMode", code: 5, userInfo: [
+                    NSLocalizedDescriptionKey: "Speech recognition permission denied",
+                ])
+            }
+        }
+
+        do {
+            try Self.configureAudioSession()
+            self.captureMode = .pushToTalk
+            try self.startRecognition()
+            self.isListening = true
+            self.isPushToTalkActive = true
+            self.statusText = "Listening (PTT)"
+        } catch {
+            self.isListening = false
+            self.isPushToTalkActive = false
+            self.captureMode = .idle
+            self.statusText = "Start failed: \(error.localizedDescription)"
+            throw error
+        }
+
+        return DraftClawTalkPTTStartPayload(captureId: captureId)
+    }
+
+    func endPushToTalk() async -> DraftClawTalkPTTStopPayload {
+        let captureId = self.activePTTCaptureId ?? UUID().uuidString
+        guard self.isPushToTalkActive else {
+            let payload = DraftClawTalkPTTStopPayload(
+                captureId: captureId,
+                transcript: nil,
+                status: "idle")
+            self.finishPTTOnce(payload)
+            return payload
+        }
+
+        self.isPushToTalkActive = false
+        self.isListening = false
+        self.captureMode = .idle
+        self.stopRecognition()
+        self.pttTimeoutTask?.cancel()
+        self.pttTimeoutTask = nil
+        self.pttAutoStopEnabled = false
+
+        let transcript = self.lastTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.lastTranscript = ""
+        self.lastHeard = nil
+
+        guard !transcript.isEmpty else {
+            self.statusText = "Ready"
+            if self.resumeContinuousAfterPTT {
+                await self.start()
+            }
+            self.resumeContinuousAfterPTT = false
+            self.activePTTCaptureId = nil
+            let payload = DraftClawTalkPTTStopPayload(
+                captureId: captureId,
+                transcript: nil,
+                status: "empty")
+            self.finishPTTOnce(payload)
+            return payload
+        }
+
+        guard self.gatewayConnected else {
+            self.statusText = "Gateway not connected"
+            if self.resumeContinuousAfterPTT {
+                await self.start()
+            }
+            self.resumeContinuousAfterPTT = false
+            self.activePTTCaptureId = nil
+            let payload = DraftClawTalkPTTStopPayload(
+                captureId: captureId,
+                transcript: transcript,
+                status: "offline")
+            self.finishPTTOnce(payload)
+            return payload
+        }
+
+        self.statusText = "Thinking…"
+        Task { @MainActor in
+            await self.processTranscript(transcript, restartAfter: self.resumeContinuousAfterPTT)
+        }
+        self.resumeContinuousAfterPTT = false
+        self.activePTTCaptureId = nil
+        let payload = DraftClawTalkPTTStopPayload(
+            captureId: captureId,
+            transcript: transcript,
+            status: "queued")
+        self.finishPTTOnce(payload)
+        return payload
+    }
+
+    func runPushToTalkOnce(maxDurationSeconds: TimeInterval = 12) async throws -> DraftClawTalkPTTStopPayload {
+        if self.pttCompletion != nil {
+            _ = await self.cancelPushToTalk()
+        }
+
+        if self.isPushToTalkActive {
+            let captureId = self.activePTTCaptureId ?? UUID().uuidString
+            return DraftClawTalkPTTStopPayload(
+                captureId: captureId,
+                transcript: nil,
+                status: "busy")
+        }
+
+        _ = try await self.beginPushToTalk()
+
+        return await withCheckedContinuation { cont in
+            self.pttCompletion = cont
+            self.pttAutoStopEnabled = true
+            self.startSilenceMonitor()
+            self.schedulePTTTimeout(seconds: maxDurationSeconds)
+        }
+    }
+
+    func cancelPushToTalk() async -> DraftClawTalkPTTStopPayload {
+        let captureId = self.activePTTCaptureId ?? UUID().uuidString
+        guard self.isPushToTalkActive else {
+            let payload = DraftClawTalkPTTStopPayload(
+                captureId: captureId,
+                transcript: nil,
+                status: "idle")
+            self.finishPTTOnce(payload)
+            self.pttAutoStopEnabled = false
+            self.pttTimeoutTask?.cancel()
+            self.pttTimeoutTask = nil
+            self.resumeContinuousAfterPTT = false
+            self.activePTTCaptureId = nil
+            return payload
+        }
+
+        let shouldResume = self.resumeContinuousAfterPTT
+        self.isPushToTalkActive = false
+        self.isListening = false
+        self.captureMode = .idle
+        self.stopRecognition()
+        self.lastTranscript = ""
+        self.lastHeard = nil
+        self.pttAutoStopEnabled = false
+        self.pttTimeoutTask?.cancel()
+        self.pttTimeoutTask = nil
+        self.resumeContinuousAfterPTT = false
+        self.activePTTCaptureId = nil
+        self.statusText = "Ready"
+
+        let payload = DraftClawTalkPTTStopPayload(
+            captureId: captureId,
+            transcript: nil,
+            status: "cancelled")
+        self.finishPTTOnce(payload)
+
+        if shouldResume {
+            await self.start()
+        }
+        return payload
+    }
+
+    private func startRecognition() throws {
+        #if targetEnvironment(simulator)
+            if !self.allowSimulatorCapture {
+                throw NSError(domain: "TalkMode", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Talk mode is not supported on the iOS simulator",
+                ])
+            } else {
+                self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+                self.recognitionRequest?.shouldReportPartialResults = true
+                return
+            }
+        #endif
+
+        self.stopRecognition()
+        self.speechRecognizer = SFSpeechRecognizer()
+        guard let recognizer = self.speechRecognizer else {
+            throw NSError(domain: "TalkMode", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Speech recognizer unavailable",
+            ])
+        }
+
+        self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        self.recognitionRequest?.shouldReportPartialResults = true
+        guard let request = self.recognitionRequest else { return }
+
+        let input = self.audioEngine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw NSError(domain: "TalkMode", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid audio input format",
+            ])
+        }
+        input.removeTap(onBus: 0)
+        let tapBlock = Self.makeAudioTapAppendCallback(request: request)
+        input.installTap(onBus: 0, bufferSize: 2048, format: format, block: tapBlock)
+        self.inputTapInstalled = true
+
+        self.audioEngine.prepare()
+        try self.audioEngine.start()
+
+        self.recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self else { return }
+            if let error {
+                if !self.isSpeaking {
+                    self.statusText = "Speech error: \(error.localizedDescription)"
+                }
+                self.logger.debug("speech recognition error: \(error.localizedDescription, privacy: .public)")
+            }
+            guard let result else { return }
+            let transcript = result.bestTranscription.formattedString
+            Task { @MainActor in
+                await self.handleTranscript(transcript: transcript, isFinal: result.isFinal)
+            }
+        }
+    }
+
+    private func stopRecognition() {
+        self.recognitionTask?.cancel()
+        self.recognitionTask = nil
+        self.recognitionRequest?.endAudio()
+        self.recognitionRequest = nil
+        if self.inputTapInstalled {
+            self.audioEngine.inputNode.removeTap(onBus: 0)
+            self.inputTapInstalled = false
+        }
+        self.audioEngine.stop()
+        self.speechRecognizer = nil
+    }
+
+    private nonisolated static func makeAudioTapAppendCallback(request: SpeechRequest) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            request.append(buffer)
+        }
+    }
+
+    private func handleTranscript(transcript: String, isFinal: Bool) async {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ttsActive = self.isSpeechOutputActive
+        if ttsActive, self.interruptOnSpeech {
+            if self.shouldInterrupt(with: trimmed) {
+                self.stopSpeaking()
+            }
+            return
+        }
+
+        guard self.isListening else { return }
+        if !trimmed.isEmpty {
+            self.lastTranscript = trimmed
+            self.lastHeard = Date()
+        }
+        if isFinal {
+            self.lastTranscript = trimmed
+            guard !trimmed.isEmpty else { return }
+            if self.captureMode == .pushToTalk, self.pttAutoStopEnabled, self.isPushToTalkActive {
+                _ = await self.endPushToTalk()
+                return
+            }
+            if self.captureMode == .continuous, !self.isSpeechOutputActive {
+                await self.processTranscript(trimmed, restartAfter: true)
+            }
+        }
+    }
+
+    private func startSilenceMonitor() {
+        self.silenceTask?.cancel()
+        self.silenceTask = Task { [weak self] in
+            guard let self else { return }
+            while self.isEnabled || (self.isPushToTalkActive && self.pttAutoStopEnabled) {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                await self.checkSilence()
+            }
+        }
+    }
+
+    private func checkSilence() async {
+        if self.captureMode == .continuous {
+            guard self.isListening, !self.isSpeechOutputActive else { return }
+            let transcript = self.lastTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !transcript.isEmpty else { return }
+            guard let lastHeard else { return }
+            if Date().timeIntervalSince(lastHeard) < self.silenceWindow { return }
+            await self.processTranscript(transcript, restartAfter: true)
+            return
+        }
+
+        guard self.captureMode == .pushToTalk, self.pttAutoStopEnabled else { return }
+        guard self.isListening, !self.isSpeaking, self.isPushToTalkActive else { return }
+        let transcript = self.lastTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return }
+        guard let lastHeard else { return }
+        if Date().timeIntervalSince(lastHeard) < self.silenceWindow { return }
+        _ = await self.endPushToTalk()
+    }
+
+    // Guardrail for PTT once so we don't stay open indefinitely.
+    private func schedulePTTTimeout(seconds: TimeInterval) {
+        guard seconds > 0 else { return }
+        let nanos = UInt64(seconds * 1_000_000_000)
+        self.pttTimeoutTask?.cancel()
+        self.pttTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            await self?.handlePTTTimeout()
+        }
+    }
+
+    private func handlePTTTimeout() async {
+        guard self.pttAutoStopEnabled, self.isPushToTalkActive else { return }
+        _ = await self.endPushToTalk()
+    }
+
+    private func finishPTTOnce(_ payload: DraftClawTalkPTTStopPayload) {
+        guard let continuation = self.pttCompletion else { return }
+        self.pttCompletion = nil
+        continuation.resume(returning: payload)
+    }
+
+    private func processTranscript(_ transcript: String, restartAfter: Bool) async {
+        self.isListening = false
+        self.captureMode = .idle
+        self.statusText = "Thinking…"
+        self.lastTranscript = ""
+        self.lastHeard = nil
+        self.stopRecognition()
+
+        await self.reloadConfig()
+        let prompt = self.buildPrompt(transcript: transcript)
+        guard self.gatewayConnected, let gateway else {
+            self.statusText = "Gateway not connected"
+            self.logger.warning("finalize: gateway not connected")
+            if restartAfter {
+                await self.start()
+            }
+            return
+        }
+
+        do {
+            let startedAt = Date().timeIntervalSince1970
+            let sessionKey = self.mainSessionKey
+            await self.subscribeChatIfNeeded(sessionKey: sessionKey)
+            self.logger.info(
+                "chat.send start sessionKey=\(sessionKey, privacy: .public) chars=\(prompt.count, privacy: .public)")
+            let runId = try await self.sendChat(prompt, gateway: gateway)
+            self.logger.info("chat.send ok runId=\(runId, privacy: .public)")
+            let shouldIncremental = self.shouldUseIncrementalTTS()
+            var streamingTask: Task<Void, Never>?
+            if shouldIncremental {
+                self.resetIncrementalSpeech()
+                streamingTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.streamAssistant(runId: runId, gateway: gateway)
+                }
+            }
+            let completion = await self.waitForChatCompletion(runId: runId, gateway: gateway, timeoutSeconds: 120)
+            if completion == .timeout {
+                self.logger.warning(
+                    "chat completion timeout runId=\(runId, privacy: .public); attempting history fallback")
+            } else if completion == .aborted {
+                self.statusText = "Aborted"
+                self.logger.warning("chat completion aborted runId=\(runId, privacy: .public)")
+                streamingTask?.cancel()
+                await self.finishIncrementalSpeech()
+                await self.start()
+                return
+            } else if completion == .error {
+                self.statusText = "Chat error"
+                self.logger.warning("chat completion error runId=\(runId, privacy: .public)")
+                streamingTask?.cancel()
+                await self.finishIncrementalSpeech()
+                await self.start()
+                return
+            }
+
+            var assistantText = try await self.waitForAssistantText(
+                gateway: gateway,
+                since: startedAt,
+                timeoutSeconds: completion == .final ? 12 : 25)
+            if assistantText == nil, shouldIncremental {
+                let fallback = self.incrementalSpeechBuffer.latestText
+                if !fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    assistantText = fallback
+                }
+            }
+            guard let assistantText else {
+                self.statusText = "No reply"
+                self.logger.warning("assistant text timeout runId=\(runId, privacy: .public)")
+                streamingTask?.cancel()
+                await self.finishIncrementalSpeech()
+                await self.start()
+                return
+            }
+            self.logger.info("assistant text ok chars=\(assistantText.count, privacy: .public)")
+            streamingTask?.cancel()
+            if shouldIncremental {
+                await self.handleIncrementalAssistantFinal(text: assistantText)
+            } else {
+                await self.playAssistant(text: assistantText)
+            }
+        } catch {
+            self.statusText = "Talk failed: \(error.localizedDescription)"
+            self.logger.error("finalize failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        if restartAfter {
+            await self.start()
+        }
+    }
+
+    private func subscribeChatIfNeeded(sessionKey: String) async {
+        let key = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        guard let gateway else { return }
+        guard !self.chatSubscribedSessionKeys.contains(key) else { return }
+
+        let payload = "{\"sessionKey\":\"\(key)\"}"
+        await gateway.sendEvent(event: "chat.subscribe", payloadJSON: payload)
+        self.chatSubscribedSessionKeys.insert(key)
+        self.logger.info("chat.subscribe ok sessionKey=\(key, privacy: .public)")
+    }
+
+    private func unsubscribeAllChats() async {
+        guard let gateway else { return }
+        let keys = self.chatSubscribedSessionKeys
+        self.chatSubscribedSessionKeys.removeAll()
+        for key in keys {
+            let payload = "{\"sessionKey\":\"\(key)\"}"
+            await gateway.sendEvent(event: "chat.unsubscribe", payloadJSON: payload)
+        }
+    }
+
+    private func buildPrompt(transcript: String) -> String {
+        let interrupted = self.lastInterruptedAtSeconds
+        self.lastInterruptedAtSeconds = nil
+        return TalkPromptBuilder.build(transcript: transcript, interruptedAtSeconds: interrupted)
+    }
+
+    private enum ChatCompletionState: CustomStringConvertible {
+        case final
+        case aborted
+        case error
+        case timeout
+
+        var description: String {
+            switch self {
+            case .final: "final"
+            case .aborted: "aborted"
+            case .error: "error"
+            case .timeout: "timeout"
+            }
+        }
+    }
+
+    private func sendChat(_ message: String, gateway: GatewayNodeSession) async throws -> String {
+        struct SendResponse: Decodable { let runId: String }
+        let payload: [String: Any] = [
+            "sessionKey": self.mainSessionKey,
+            "message": message,
+            "thinking": "low",
+            "timeoutMs": 30000,
+            "idempotencyKey": UUID().uuidString,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        guard let json = String(bytes: data, encoding: .utf8) else {
+            throw NSError(
+                domain: "TalkModeManager",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to encode chat payload"])
+        }
+        let res = try await gateway.request(method: "chat.send", paramsJSON: json, timeoutSeconds: 30)
+        let decoded = try JSONDecoder().decode(SendResponse.self, from: res)
+        return decoded.runId
+    }
+
+    private func waitForChatCompletion(
+        runId: String,
+        gateway: GatewayNodeSession,
+        timeoutSeconds: Int = 120) async -> ChatCompletionState
+    {
+        let stream = await gateway.subscribeServerEvents(bufferingNewest: 200)
+        return await withTaskGroup(of: ChatCompletionState.self) { group in
+            group.addTask { [runId] in
+                for await evt in stream {
+                    if Task.isCancelled { return .timeout }
+                    guard evt.event == "chat", let payload = evt.payload else { continue }
+                    guard let chatEvent = try? GatewayPayloadDecoding.decode(payload, as: ChatEvent.self) else {
+                        continue
+                    }
+                    guard chatEvent.runid == runId else { continue }
+                    if let state = chatEvent.state.value as? String {
+                        switch state {
+                        case "final": return .final
+                        case "aborted": return .aborted
+                        case "error": return .error
+                        default: break
+                        }
+                    }
+                }
+                return .timeout
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds) * 1_000_000_000)
+                return .timeout
+            }
+            let result = await group.next() ?? .timeout
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func waitForAssistantText(
+        gateway: GatewayNodeSession,
+        since: Double,
+        timeoutSeconds: Int) async throws -> String?
+    {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
+        while Date() < deadline {
+            if let text = try await self.fetchLatestAssistantText(gateway: gateway, since: since) {
+                return text
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        return nil
+    }
+
+    private func fetchLatestAssistantText(gateway: GatewayNodeSession, since: Double? = nil) async throws -> String? {
+        let res = try await gateway.request(
+            method: "chat.history",
+            paramsJSON: "{\"sessionKey\":\"\(self.mainSessionKey)\"}",
+            timeoutSeconds: 15)
+        guard let json = try JSONSerialization.jsonObject(with: res) as? [String: Any] else { return nil }
+        guard let messages = json["messages"] as? [[String: Any]] else { return nil }
+        for msg in messages.reversed() {
+            guard (msg["role"] as? String) == "assistant" else { continue }
+            if let since, let timestamp = msg["timestamp"] as? Double,
+               TalkHistoryTimestamp.isAfter(timestamp, sinceSeconds: since) == false
+            {
+                continue
+            }
+            guard let content = msg["content"] as? [[String: Any]] else { continue }
+            let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n")
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
+    private func playAssistant(text: String) async {
+        let parsed = TalkDirectiveParser.parse(text)
+        let directive = parsed.directive
+        let cleaned = parsed.stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        self.applyDirective(directive)
+
+        self.statusText = "Generating voice…"
+        self.isSpeaking = true
+        self.lastSpokenText = cleaned
+
+        do {
+            let started = Date()
+            let language = ElevenLabsTTSClient.validatedLanguage(directive?.language)
+            let requestedVoice = directive?.voiceId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedVoice = self.resolveVoiceAlias(requestedVoice)
+            if requestedVoice?.isEmpty == false, resolvedVoice == nil {
+                self.logger.warning("unknown voice alias \(requestedVoice ?? "?", privacy: .public)")
+            }
+
+            let resolvedKey =
+                (self.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? self.apiKey : nil) ??
+                ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"]
+            let apiKey = resolvedKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let preferredVoice = resolvedVoice ?? self.currentVoiceId ?? self.defaultVoiceId
+            let voiceId: String? = if let apiKey, !apiKey.isEmpty {
+                await self.resolveVoiceId(preferred: preferredVoice, apiKey: apiKey)
+            } else {
+                nil
+            }
+            let canUseElevenLabs = (voiceId?.isEmpty == false) && (apiKey?.isEmpty == false)
+
+            if canUseElevenLabs, let voiceId, let apiKey {
+                let desiredOutputFormat = (directive?.outputFormat ?? self.defaultOutputFormat)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let requestedOutputFormat = (desiredOutputFormat?.isEmpty == false) ? desiredOutputFormat : nil
+                let outputFormat = ElevenLabsTTSClient.validatedOutputFormat(requestedOutputFormat ?? "pcm_44100")
+                if outputFormat == nil, let requestedOutputFormat {
+                    self.logger.warning(
+                        "talk output_format unsupported for local playback: \(requestedOutputFormat, privacy: .public)")
+                }
+
+                let modelId = directive?.modelId ?? self.currentModelId ?? self.defaultModelId
+                func makeRequest(outputFormat: String?) -> ElevenLabsTTSRequest {
+                    ElevenLabsTTSRequest(
+                        text: cleaned,
+                        modelId: modelId,
+                        outputFormat: outputFormat,
+                        speed: TalkTTSValidation.resolveSpeed(speed: directive?.speed, rateWPM: directive?.rateWPM),
+                        stability: TalkTTSValidation.validatedStability(directive?.stability, modelId: modelId),
+                        similarity: TalkTTSValidation.validatedUnit(directive?.similarity),
+                        style: TalkTTSValidation.validatedUnit(directive?.style),
+                        speakerBoost: directive?.speakerBoost,
+                        seed: TalkTTSValidation.validatedSeed(directive?.seed),
+                        normalize: ElevenLabsTTSClient.validatedNormalize(directive?.normalize),
+                        language: language,
+                        latencyTier: TalkTTSValidation.validatedLatencyTier(directive?.latencyTier))
+                }
+
+                let request = makeRequest(outputFormat: outputFormat)
+
+                let client = ElevenLabsTTSClient(apiKey: apiKey)
+                let stream = client.streamSynthesize(voiceId: voiceId, request: request)
+
+                if self.interruptOnSpeech {
+                    do {
+                        try self.startRecognition()
+                    } catch {
+                        self.logger.warning(
+                            "startRecognition during speak failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+
+                self.statusText = "Speaking…"
+                let sampleRate = TalkTTSValidation.pcmSampleRate(from: outputFormat)
+                let result: StreamingPlaybackResult
+                if let sampleRate {
+                    self.lastPlaybackWasPCM = true
+                    var playback = await self.pcmPlayer.play(stream: stream, sampleRate: sampleRate)
+                    if !playback.finished, playback.interruptedAt == nil {
+                        let mp3Format = ElevenLabsTTSClient.validatedOutputFormat("mp3_44100")
+                        self.logger.warning("pcm playback failed; retrying mp3")
+                        self.lastPlaybackWasPCM = false
+                        let mp3Stream = client.streamSynthesize(
+                            voiceId: voiceId,
+                            request: makeRequest(outputFormat: mp3Format))
+                        playback = await self.mp3Player.play(stream: mp3Stream)
+                    }
+                    result = playback
+                } else {
+                    self.lastPlaybackWasPCM = false
+                    result = await self.mp3Player.play(stream: stream)
+                }
+                let duration = Date().timeIntervalSince(started)
+                self.logger.info("elevenlabs stream finished=\(result.finished, privacy: .public) dur=\(duration, privacy: .public)s")
+                if !result.finished, let interruptedAt = result.interruptedAt {
+                    self.lastInterruptedAtSeconds = interruptedAt
+                }
+            } else {
+                self.logger.warning("tts unavailable; falling back to system voice (missing key or voiceId)")
+                if self.interruptOnSpeech {
+                    do {
+                        try self.startRecognition()
+                    } catch {
+                        self.logger.warning(
+                            "startRecognition during speak failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+                self.statusText = "Speaking (System)…"
+                try await TalkSystemSpeechSynthesizer.shared.speak(text: cleaned, language: language)
+            }
+        } catch {
+            self.logger.error(
+                "tts failed: \(error.localizedDescription, privacy: .public); falling back to system voice")
+            do {
+                if self.interruptOnSpeech {
+                    do {
+                        try self.startRecognition()
+                    } catch {
+                        self.logger.warning(
+                            "startRecognition during speak failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+                self.statusText = "Speaking (System)…"
+                let language = ElevenLabsTTSClient.validatedLanguage(directive?.language)
+                try await TalkSystemSpeechSynthesizer.shared.speak(text: cleaned, language: language)
+            } catch {
+                self.statusText = "Speak failed: \(error.localizedDescription)"
+                self.logger.error("system voice failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        self.stopRecognition()
+        self.isSpeaking = false
+    }
+
+    private func stopSpeaking(storeInterruption: Bool = true) {
+        let hasIncremental = self.incrementalSpeechActive ||
+            self.incrementalSpeechTask != nil ||
+            !self.incrementalSpeechQueue.isEmpty
+        if self.isSpeaking {
+            let interruptedAt = self.lastPlaybackWasPCM
+                ? self.pcmPlayer.stop()
+                : self.mp3Player.stop()
+            if storeInterruption {
+                self.lastInterruptedAtSeconds = interruptedAt
+            }
+            _ = self.lastPlaybackWasPCM
+                ? self.mp3Player.stop()
+                : self.pcmPlayer.stop()
+        } else if !hasIncremental {
+            return
+        }
+        TalkSystemSpeechSynthesizer.shared.stop()
+        self.cancelIncrementalSpeech()
+        self.isSpeaking = false
+    }
+
+    private func shouldInterrupt(with transcript: String) -> Bool {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return false }
+        if let spoken = self.lastSpokenText?.lowercased(), spoken.contains(trimmed.lowercased()) {
+            return false
+        }
+        return true
+    }
+
+    private func shouldUseIncrementalTTS() -> Bool {
+        true
+    }
+
+    private var isSpeechOutputActive: Bool {
+        self.isSpeaking ||
+            self.incrementalSpeechActive ||
+            self.incrementalSpeechTask != nil ||
+            !self.incrementalSpeechQueue.isEmpty
+    }
+
+    private func applyDirective(_ directive: TalkDirective?) {
+        let requestedVoice = directive?.voiceId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedVoice = self.resolveVoiceAlias(requestedVoice)
+        if requestedVoice?.isEmpty == false, resolvedVoice == nil {
+            self.logger.warning("unknown voice alias \(requestedVoice ?? "?", privacy: .public)")
+        }
+        if let voice = resolvedVoice {
+            if directive?.once != true {
+                self.currentVoiceId = voice
+                self.voiceOverrideActive = true
+            }
+        }
+        if let model = directive?.modelId {
+            if directive?.once != true {
+                self.currentModelId = model
+                self.modelOverrideActive = true
+            }
+        }
+    }
+
+    private func resetIncrementalSpeech() {
+        self.incrementalSpeechQueue.removeAll()
+        self.incrementalSpeechTask?.cancel()
+        self.incrementalSpeechTask = nil
+        self.incrementalSpeechActive = true
+        self.incrementalSpeechUsed = false
+        self.incrementalSpeechLanguage = nil
+        self.incrementalSpeechBuffer = IncrementalSpeechBuffer()
+        self.incrementalSpeechContext = nil
+        self.incrementalSpeechDirective = nil
+    }
+
+    private func cancelIncrementalSpeech() {
+        self.incrementalSpeechQueue.removeAll()
+        self.incrementalSpeechTask?.cancel()
+        self.incrementalSpeechTask = nil
+        self.incrementalSpeechActive = false
+        self.incrementalSpeechContext = nil
+        self.incrementalSpeechDirective = nil
+    }
+
+    private func enqueueIncrementalSpeech(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        self.incrementalSpeechQueue.append(trimmed)
+        self.incrementalSpeechUsed = true
+        if self.incrementalSpeechTask == nil {
+            self.startIncrementalSpeechTask()
+        }
+    }
+
+    private func startIncrementalSpeechTask() {
+        if self.interruptOnSpeech {
+            do {
+                try self.startRecognition()
+            } catch {
+                self.logger.warning(
+                    "startRecognition during incremental speak failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        self.incrementalSpeechTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                guard !self.incrementalSpeechQueue.isEmpty else { break }
+                let segment = self.incrementalSpeechQueue.removeFirst()
+                self.statusText = "Speaking…"
+                self.isSpeaking = true
+                self.lastSpokenText = segment
+                await self.speakIncrementalSegment(segment)
+            }
+            self.isSpeaking = false
+            self.stopRecognition()
+            self.incrementalSpeechTask = nil
+        }
+    }
+
+    private func finishIncrementalSpeech() async {
+        guard self.incrementalSpeechActive else { return }
+        let leftover = self.incrementalSpeechBuffer.flush()
+        if let leftover {
+            self.enqueueIncrementalSpeech(leftover)
+        }
+        if let task = self.incrementalSpeechTask {
+            _ = await task.result
+        }
+        self.incrementalSpeechActive = false
+    }
+
+    private func handleIncrementalAssistantFinal(text: String) async {
+        let parsed = TalkDirectiveParser.parse(text)
+        self.applyDirective(parsed.directive)
+        if let lang = parsed.directive?.language {
+            self.incrementalSpeechLanguage = ElevenLabsTTSClient.validatedLanguage(lang)
+        }
+        await self.updateIncrementalContextIfNeeded()
+        let segments = self.incrementalSpeechBuffer.ingest(text: text, isFinal: true)
+        for segment in segments {
+            self.enqueueIncrementalSpeech(segment)
+        }
+        await self.finishIncrementalSpeech()
+        if !self.incrementalSpeechUsed {
+            await self.playAssistant(text: text)
+        }
+    }
+
+    private func streamAssistant(runId: String, gateway: GatewayNodeSession) async {
+        let stream = await gateway.subscribeServerEvents(bufferingNewest: 200)
+        for await evt in stream {
+            if Task.isCancelled { return }
+            guard evt.event == "agent", let payload = evt.payload else { continue }
+            guard let agentEvent = try? GatewayPayloadDecoding.decode(payload, as: DraftClawAgentEventPayload.self) else {
+                continue
+            }
+            guard agentEvent.runId == runId, agentEvent.stream == "assistant" else { continue }
+            guard let text = agentEvent.data["text"]?.value as? String else { continue }
+            let segments = self.incrementalSpeechBuffer.ingest(text: text, isFinal: false)
+            if let lang = self.incrementalSpeechBuffer.directive?.language {
+                self.incrementalSpeechLanguage = ElevenLabsTTSClient.validatedLanguage(lang)
+            }
+            await self.updateIncrementalContextIfNeeded()
+            for segment in segments {
+                self.enqueueIncrementalSpeech(segment)
+            }
+        }
+    }
+
+    private func updateIncrementalContextIfNeeded() async {
+        let directive = self.incrementalSpeechBuffer.directive
+        if let existing = self.incrementalSpeechContext, directive == self.incrementalSpeechDirective {
+            if existing.language != self.incrementalSpeechLanguage {
+                self.incrementalSpeechContext = IncrementalSpeechContext(
+                    apiKey: existing.apiKey,
+                    voiceId: existing.voiceId,
+                    modelId: existing.modelId,
+                    outputFormat: existing.outputFormat,
+                    language: self.incrementalSpeechLanguage,
+                    directive: existing.directive,
+                    canUseElevenLabs: existing.canUseElevenLabs)
+            }
+            return
+        }
+        let context = await self.buildIncrementalSpeechContext(directive: directive)
+        self.incrementalSpeechContext = context
+        self.incrementalSpeechDirective = directive
+    }
+
+    private func buildIncrementalSpeechContext(directive: TalkDirective?) async -> IncrementalSpeechContext {
+        let requestedVoice = directive?.voiceId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedVoice = self.resolveVoiceAlias(requestedVoice)
+        if requestedVoice?.isEmpty == false, resolvedVoice == nil {
+            self.logger.warning("unknown voice alias \(requestedVoice ?? "?", privacy: .public)")
+        }
+        let preferredVoice = resolvedVoice ?? self.currentVoiceId ?? self.defaultVoiceId
+        let modelId = directive?.modelId ?? self.currentModelId ?? self.defaultModelId
+        let desiredOutputFormat = (directive?.outputFormat ?? self.defaultOutputFormat)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedOutputFormat = (desiredOutputFormat?.isEmpty == false) ? desiredOutputFormat : nil
+        let outputFormat = ElevenLabsTTSClient.validatedOutputFormat(requestedOutputFormat ?? "pcm_44100")
+        if outputFormat == nil, let requestedOutputFormat {
+            self.logger.warning(
+                "talk output_format unsupported for local playback: \(requestedOutputFormat, privacy: .public)")
+        }
+
+        let resolvedKey =
+            (self.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? self.apiKey : nil) ??
+            ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"]
+        let apiKey = resolvedKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let voiceId: String? = if let apiKey, !apiKey.isEmpty {
+            await self.resolveVoiceId(preferred: preferredVoice, apiKey: apiKey)
+        } else {
+            nil
+        }
+        let canUseElevenLabs = (voiceId?.isEmpty == false) && (apiKey?.isEmpty == false)
+        return IncrementalSpeechContext(
+            apiKey: apiKey,
+            voiceId: voiceId,
+            modelId: modelId,
+            outputFormat: outputFormat,
+            language: self.incrementalSpeechLanguage,
+            directive: directive,
+            canUseElevenLabs: canUseElevenLabs)
+    }
+
+    private func speakIncrementalSegment(_ text: String) async {
+        await self.updateIncrementalContextIfNeeded()
+        guard let context = self.incrementalSpeechContext else {
+            try? await TalkSystemSpeechSynthesizer.shared.speak(
+                text: text,
+                language: self.incrementalSpeechLanguage)
+            return
+        }
+
+        if context.canUseElevenLabs, let apiKey = context.apiKey, let voiceId = context.voiceId {
+            let request = ElevenLabsTTSRequest(
+                text: text,
+                modelId: context.modelId,
+                outputFormat: context.outputFormat,
+                speed: TalkTTSValidation.resolveSpeed(
+                    speed: context.directive?.speed,
+                    rateWPM: context.directive?.rateWPM),
+                stability: TalkTTSValidation.validatedStability(
+                    context.directive?.stability,
+                    modelId: context.modelId),
+                similarity: TalkTTSValidation.validatedUnit(context.directive?.similarity),
+                style: TalkTTSValidation.validatedUnit(context.directive?.style),
+                speakerBoost: context.directive?.speakerBoost,
+                seed: TalkTTSValidation.validatedSeed(context.directive?.seed),
+                normalize: ElevenLabsTTSClient.validatedNormalize(context.directive?.normalize),
+                language: context.language,
+                latencyTier: TalkTTSValidation.validatedLatencyTier(context.directive?.latencyTier))
+            let client = ElevenLabsTTSClient(apiKey: apiKey)
+            let stream = client.streamSynthesize(voiceId: voiceId, request: request)
+            let sampleRate = TalkTTSValidation.pcmSampleRate(from: context.outputFormat)
+            let result: StreamingPlaybackResult
+            if let sampleRate {
+                self.lastPlaybackWasPCM = true
+                var playback = await self.pcmPlayer.play(stream: stream, sampleRate: sampleRate)
+                if !playback.finished, playback.interruptedAt == nil {
+                    self.logger.warning("pcm playback failed; retrying mp3")
+                    self.lastPlaybackWasPCM = false
+                    let mp3Format = ElevenLabsTTSClient.validatedOutputFormat("mp3_44100")
+                    let mp3Stream = client.streamSynthesize(
+                        voiceId: voiceId,
+                        request: ElevenLabsTTSRequest(
+                            text: text,
+                            modelId: context.modelId,
+                            outputFormat: mp3Format,
+                            speed: TalkTTSValidation.resolveSpeed(
+                                speed: context.directive?.speed,
+                                rateWPM: context.directive?.rateWPM),
+                            stability: TalkTTSValidation.validatedStability(
+                                context.directive?.stability,
+                                modelId: context.modelId),
+                            similarity: TalkTTSValidation.validatedUnit(context.directive?.similarity),
+                            style: TalkTTSValidation.validatedUnit(context.directive?.style),
+                            speakerBoost: context.directive?.speakerBoost,
+                            seed: TalkTTSValidation.validatedSeed(context.directive?.seed),
+                            normalize: ElevenLabsTTSClient.validatedNormalize(context.directive?.normalize),
+                            language: context.language,
+                            latencyTier: TalkTTSValidation.validatedLatencyTier(context.directive?.latencyTier)))
+                    playback = await self.mp3Player.play(stream: mp3Stream)
+                }
+                result = playback
+            } else {
+                self.lastPlaybackWasPCM = false
+                result = await self.mp3Player.play(stream: stream)
+            }
+            if !result.finished, let interruptedAt = result.interruptedAt {
+                self.lastInterruptedAtSeconds = interruptedAt
+            }
+        } else {
+            try? await TalkSystemSpeechSynthesizer.shared.speak(
+                text: text,
+                language: self.incrementalSpeechLanguage)
+        }
+    }
+
+    private func resolveVoiceAlias(_ value: String?) -> String? {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let normalized = trimmed.lowercased()
+        if let mapped = self.voiceAliases[normalized] { return mapped }
+        if self.voiceAliases.values.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return trimmed
+        }
+        return Self.isLikelyVoiceId(trimmed) ? trimmed : nil
+    }
+
+    private func resolveVoiceId(preferred: String?, apiKey: String) async -> String? {
+        let trimmed = preferred?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty {
+            if let resolved = self.resolveVoiceAlias(trimmed) { return resolved }
+            self.logger.warning("unknown voice alias \(trimmed, privacy: .public)")
+        }
+        if let fallbackVoiceId { return fallbackVoiceId }
+
+        do {
+            let voices = try await ElevenLabsTTSClient(apiKey: apiKey).listVoices()
+            guard let first = voices.first else {
+                self.logger.warning("elevenlabs voices list empty")
+                return nil
+            }
+            self.fallbackVoiceId = first.voiceId
+            if self.defaultVoiceId == nil {
+                self.defaultVoiceId = first.voiceId
+            }
+            if !self.voiceOverrideActive {
+                self.currentVoiceId = first.voiceId
+            }
+            let name = first.name ?? "unknown"
+            self.logger
+                .info("default voice selected \(name, privacy: .public) (\(first.voiceId, privacy: .public))")
+            return first.voiceId
+        } catch {
+            self.logger.error("elevenlabs list voices failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    private static func isLikelyVoiceId(_ value: String) -> Bool {
+        guard value.count >= 10 else { return false }
+        return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    private func reloadConfig() async {
+        guard let gateway else { return }
+        do {
+            let res = try await gateway.request(method: "config.get", paramsJSON: "{}", timeoutSeconds: 8)
+            guard let json = try JSONSerialization.jsonObject(with: res) as? [String: Any] else { return }
+            guard let config = json["config"] as? [String: Any] else { return }
+            let talk = config["talk"] as? [String: Any]
+            let session = config["session"] as? [String: Any]
+            let mainKey = SessionKey.normalizeMainKey(session?["mainKey"] as? String)
+            if !SessionKey.isCanonicalMainSessionKey(self.mainSessionKey) {
+                self.mainSessionKey = mainKey
+            }
+            self.defaultVoiceId = (talk?["voiceId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let aliases = talk?["voiceAliases"] as? [String: Any] {
+                var resolved: [String: String] = [:]
+                for (key, value) in aliases {
+                    guard let id = value as? String else { continue }
+                    let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let trimmedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !normalizedKey.isEmpty, !trimmedId.isEmpty else { continue }
+                    resolved[normalizedKey] = trimmedId
+                }
+                self.voiceAliases = resolved
+            } else {
+                self.voiceAliases = [:]
+            }
+            if !self.voiceOverrideActive {
+                self.currentVoiceId = self.defaultVoiceId
+            }
+            let model = (talk?["modelId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.defaultModelId = (model?.isEmpty == false) ? model : Self.defaultModelIdFallback
+            if !self.modelOverrideActive {
+                self.currentModelId = self.defaultModelId
+            }
+            self.defaultOutputFormat = (talk?["outputFormat"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            self.apiKey = (talk?["apiKey"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let interrupt = talk?["interruptOnSpeech"] as? Bool {
+                self.interruptOnSpeech = interrupt
+            }
+        } catch {
+            self.defaultModelId = Self.defaultModelIdFallback
+            if !self.modelOverrideActive {
+                self.currentModelId = self.defaultModelId
+            }
+        }
+    }
+
+    private static func configureAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [
+            .duckOthers,
+            .mixWithOthers,
+            .allowBluetoothHFP,
+            .defaultToSpeaker,
+        ])
+        try session.setActive(true, options: [])
+    }
+
+}
+
+private struct IncrementalSpeechBuffer {
+    private(set) var latestText: String = ""
+    private(set) var directive: TalkDirective?
+    private var spokenOffset: Int = 0
+    private var inCodeBlock = false
+    private var directiveParsed = false
+
+    mutating func ingest(text: String, isFinal: Bool) -> [String] {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        guard let usable = self.stripDirectiveIfReady(from: normalized) else { return [] }
+        self.updateText(usable)
+        return self.extractSegments(isFinal: isFinal)
+    }
+
+    mutating func flush() -> String? {
+        guard !self.latestText.isEmpty else { return nil }
+        let segments = self.extractSegments(isFinal: true)
+        return segments.first
+    }
+
+    private mutating func stripDirectiveIfReady(from text: String) -> String? {
+        guard !self.directiveParsed else { return text }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("{") {
+            guard let newlineRange = text.range(of: "\n") else { return nil }
+            let firstLine = text[..<newlineRange.lowerBound]
+            let head = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard head.hasSuffix("}") else { return nil }
+            let parsed = TalkDirectiveParser.parse(text)
+            if let directive = parsed.directive {
+                self.directive = directive
+            }
+            self.directiveParsed = true
+            return parsed.stripped
+        }
+        self.directiveParsed = true
+        return text
+    }
+
+    private mutating func updateText(_ newText: String) {
+        if newText.hasPrefix(self.latestText) {
+            self.latestText = newText
+        } else if self.latestText.hasPrefix(newText) {
+            // Stream reset or correction; prefer the newer prefix.
+            self.latestText = newText
+            self.spokenOffset = min(self.spokenOffset, newText.count)
+        } else {
+            // Diverged text means chunks arrived out of order or stream restarted.
+            let commonPrefix = Self.commonPrefixCount(self.latestText, newText)
+            self.latestText = newText
+            if self.spokenOffset > commonPrefix {
+                self.spokenOffset = commonPrefix
+            }
+        }
+        if self.spokenOffset > self.latestText.count {
+            self.spokenOffset = self.latestText.count
+        }
+    }
+
+    private static func commonPrefixCount(_ lhs: String, _ rhs: String) -> Int {
+        let left = Array(lhs)
+        let right = Array(rhs)
+        let limit = min(left.count, right.count)
+        var idx = 0
+        while idx < limit, left[idx] == right[idx] {
+            idx += 1
+        }
+        return idx
+    }
+
+    private mutating func extractSegments(isFinal: Bool) -> [String] {
+        let chars = Array(self.latestText)
+        guard self.spokenOffset < chars.count else { return [] }
+        var idx = self.spokenOffset
+        var lastBoundary: Int?
+        var inCodeBlock = self.inCodeBlock
+        var buffer = ""
+        var bufferAtBoundary = ""
+        var inCodeBlockAtBoundary = inCodeBlock
+
+        while idx < chars.count {
+            if idx + 2 < chars.count,
+               chars[idx] == "`",
+               chars[idx + 1] == "`",
+               chars[idx + 2] == "`"
+            {
+                inCodeBlock.toggle()
+                idx += 3
+                continue
+            }
+
+            if !inCodeBlock {
+                buffer.append(chars[idx])
+                if Self.isBoundary(chars[idx]) {
+                    lastBoundary = idx + 1
+                    bufferAtBoundary = buffer
+                    inCodeBlockAtBoundary = inCodeBlock
+                }
+            }
+
+            idx += 1
+        }
+
+        if let boundary = lastBoundary {
+            self.spokenOffset = boundary
+            self.inCodeBlock = inCodeBlockAtBoundary
+            let trimmed = bufferAtBoundary.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? [] : [trimmed]
+        }
+
+        guard isFinal else { return [] }
+        self.spokenOffset = chars.count
+        self.inCodeBlock = inCodeBlock
+        let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? [] : [trimmed]
+    }
+
+    private static func isBoundary(_ ch: Character) -> Bool {
+        ch == "." || ch == "!" || ch == "?" || ch == "\n"
+    }
+}
+
+extension TalkModeManager {
+    nonisolated static func requestMicrophonePermission() async -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        switch session.recordPermission {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .undetermined:
+            break
+        @unknown default:
+            return false
+        }
+
+        return await self.requestPermissionWithTimeout { completion in
+            AVAudioSession.sharedInstance().requestRecordPermission { ok in
+                completion(ok)
+            }
+        }
+    }
+
+    nonisolated static func requestSpeechPermission() async -> Bool {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        switch status {
+        case .authorized:
+            return true
+        case .denied, .restricted:
+            return false
+        case .notDetermined:
+            break
+        @unknown default:
+            return false
+        }
+
+        return await self.requestPermissionWithTimeout { completion in
+            SFSpeechRecognizer.requestAuthorization { authStatus in
+                completion(authStatus == .authorized)
+            }
+        }
+    }
+
+    private nonisolated static func requestPermissionWithTimeout(
+        _ operation: @escaping @Sendable (@escaping (Bool) -> Void) -> Void) async -> Bool
+    {
+        do {
+            return try await AsyncTimeout.withTimeout(
+                seconds: 8,
+                onTimeout: { NSError(domain: "TalkMode", code: 6, userInfo: [
+                    NSLocalizedDescriptionKey: "permission request timed out",
+                ]) },
+                operation: {
+                    await withCheckedContinuation(isolation: nil) { cont in
+                        Task { @MainActor in
+                            operation { ok in
+                                cont.resume(returning: ok)
+                            }
+                        }
+                    }
+                })
+        } catch {
+            return false
+        }
+    }
+
+    static func permissionMessage(
+        kind: String,
+        status: AVAudioSession.RecordPermission) -> String
+    {
+        switch status {
+        case .denied:
+            return "\(kind) permission denied"
+        case .undetermined:
+            return "\(kind) permission not granted"
+        case .granted:
+            return "\(kind) permission denied"
+        @unknown default:
+            return "\(kind) permission denied"
+        }
+    }
+
+    static func permissionMessage(
+        kind: String,
+        status: SFSpeechRecognizerAuthorizationStatus) -> String
+    {
+        switch status {
+        case .denied:
+            return "\(kind) permission denied"
+        case .restricted:
+            return "\(kind) permission restricted"
+        case .notDetermined:
+            return "\(kind) permission not granted"
+        case .authorized:
+            return "\(kind) permission denied"
+        @unknown default:
+            return "\(kind) permission denied"
+        }
+    }
+}
+
+private struct IncrementalSpeechContext {
+    let apiKey: String?
+    let voiceId: String?
+    let modelId: String?
+    let outputFormat: String?
+    let language: String?
+    let directive: TalkDirective?
+    let canUseElevenLabs: Bool
+}
+
+#if DEBUG
+extension TalkModeManager {
+    func _test_seedTranscript(_ transcript: String) {
+        self.lastTranscript = transcript
+        self.lastHeard = Date()
+    }
+
+    func _test_handleTranscript(_ transcript: String, isFinal: Bool) async {
+        await self.handleTranscript(transcript: transcript, isFinal: isFinal)
+    }
+
+    func _test_backdateLastHeard(seconds: TimeInterval) {
+        self.lastHeard = Date().addingTimeInterval(-seconds)
+    }
+
+    func _test_runSilenceCheck() async {
+        await self.checkSilence()
+    }
+
+    func _test_incrementalReset() {
+        self.incrementalSpeechBuffer = IncrementalSpeechBuffer()
+    }
+
+    func _test_incrementalIngest(_ text: String, isFinal: Bool) -> [String] {
+        self.incrementalSpeechBuffer.ingest(text: text, isFinal: isFinal)
+    }
+}
+#endif

@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/telegram",
+  "version": "2026.2.1",
+  "description": "DraftClaw Telegram channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

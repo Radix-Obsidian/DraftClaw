@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/imessage",
+  "version": "2026.2.1",
+  "description": "DraftClaw iMessage channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+# DraftClaw Code Ownership and Review Requirements
+
+# Core Engine & Architecture
+/src/agents/              @Sakamoto-Ops
+/src/config/             @Sakamoto-Ops
+/src/cli/                @Sakamoto-Ops
+
+# Sports Analytics & Betting Logic
+/src/moneyball/          @Sakamoto-Ops
+/src/odds/               @Sakamoto-Ops
+/src/analysis/           @Sakamoto-Ops
+
+# User Portal & Authentication
+/src/user-portal/        @Sakamoto-Ops
+/src/auth/               @Sakamoto-Ops
+
+# Infrastructure & DevOps
+/.github/                @Sakamoto-Ops
+/docker/                 @Sakamoto-Ops
+*.dockerfile             @Sakamoto-Ops
+docker-compose*.yml      @Sakamoto-Ops
+
+# Documentation
+/docs/                   @Sakamoto-Ops
+*.md                     @Sakamoto-Ops
+
+# Tests
+/test/                   @Sakamoto-Ops
+*.test.ts                @Sakamoto-Ops
+
+# Security
+/src/security/           @Sakamoto-Ops
+SECURITY.md              @Sakamoto-Ops
+
+# Default owners for everything else
+*                        @Sakamoto-Ops

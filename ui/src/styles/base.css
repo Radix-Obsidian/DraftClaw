@@ -1,0 +1,428 @@
+@import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* Background - DraftClaw Dark Navy */
+  --bg: #0b1120;
+  --bg-accent: #0f172a;
+  --bg-elevated: #151b2b;
+  --bg-hover: #1e293b;
+  --bg-muted: #1e293b;
+
+  /* Card / Surface - Sports Card Dark */
+  --card: #151b2b;
+  --card-foreground: #f8fafc;
+  --card-highlight: rgba(0, 255, 183, 0.08);
+  --popover: #151b2b;
+  --popover-foreground: #f8fafc;
+
+  /* Panel */
+  --panel: #0b1120;
+  --panel-strong: #151b2b;
+  --panel-hover: #1e293b;
+  --chrome: rgba(11, 17, 32, 0.95);
+  --chrome-strong: rgba(11, 17, 32, 0.98);
+
+  /* Text */
+  --text: #e2e8f0;
+  --text-strong: #f8fafc;
+  --chat-text: #e2e8f0;
+  --muted: #64748b;
+  --muted-strong: #475569;
+  --muted-foreground: #64748b;
+
+  /* Border */
+  --border: #1e293b;
+  --border-strong: #334155;
+  --border-hover: #475569;
+  --input: #1e293b;
+  --ring: #00ffb7;
+
+  /* Accent - Action Green (High EV) */
+  --accent: #00ffb7;
+  --accent-hover: #00e6a5;
+  --accent-muted: #00d49b;
+  --accent-subtle: rgba(0, 255, 183, 0.15);
+  --accent-foreground: #0b1120;
+  --accent-glow: rgba(0, 255, 183, 0.3);
+  --primary: #00ffb7;
+  --primary-foreground: #0b1120;
+
+  /* Secondary - Electric Blue */
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --accent-2: #38bdf8;
+  --accent-2-muted: rgba(56, 189, 248, 0.7);
+  --accent-2-subtle: rgba(56, 189, 248, 0.15);
+
+  /* Semantic - Sports Theme */
+  --ok: #00ffb7;
+  --ok-muted: rgba(0, 255, 183, 0.75);
+  --ok-subtle: rgba(0, 255, 183, 0.12);
+  --destructive: #ff3b30;
+  --destructive-foreground: #fafafa;
+  --warn: #fbbf24;
+  --warn-muted: rgba(251, 191, 36, 0.75);
+  --warn-subtle: rgba(251, 191, 36, 0.12);
+  --danger: #ff3b30;
+  --danger-muted: rgba(255, 59, 48, 0.75);
+  --danger-subtle: rgba(255, 59, 48, 0.12);
+  --info: #38bdf8;
+
+  /* Sports-specific colors */
+  --lock: #00ffb7;
+  --longshot: #fbbf24;
+  --trap: #ff3b30;
+
+  /* Focus - With green glow */
+  --focus: rgba(0, 255, 183, 0.25);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+  --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
+
+  /* Grid */
+  --grid-line: rgba(255, 255, 255, 0.04);
+
+  /* Theme transition */
+  --theme-switch-x: 50%;
+  --theme-switch-y: 50%;
+
+  /* Typography - Sports Ticker Style */
+  --mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Oswald", "Roboto Condensed", -apple-system, sans-serif;
+
+  /* Shadows - With green accent glow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 255, 183, 0.05);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 255, 183, 0.05);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 255, 183, 0.05);
+  --shadow-glow: 0 0 30px var(--accent-glow);
+
+  /* Radii - Slightly larger for card feel */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+  --radius: 10px;
+
+  /* Transitions - Snappy but smooth */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+
+  color-scheme: dark;
+}
+
+/* Light theme - Apple-inspired design principles */
+:root[data-theme="light"] {
+  /* Background - Apple refined subtle gray */
+  --bg: #f2f2f7;
+  --bg-accent: #e5e5ea;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e9e9eb;
+  --bg-muted: #e5e5ea;
+  --bg-content: #f2f2f7;
+
+  /* Card / Surface - More subtle with less harsh white */
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --card-highlight: rgba(0, 0, 0, 0.02);
+  --popover: #ffffff;
+  --popover-foreground: #1c1c1e;
+
+  /* Panel - Apple-style layered interface */
+  --panel: #f2f2f7;
+  --panel-strong: #e5e5ea;
+  --panel-hover: #e5e5ea;
+  --chrome: rgba(242, 242, 247, 0.85);
+  --chrome-strong: rgba(242, 242, 247, 0.95);
+
+  /* Text - Better contrast ratios per Apple HIG */
+  --text: #3a3a3c;
+  --text-strong: #1c1c1e;
+  --chat-text: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-strong: #48484a;
+  --muted-foreground: #6e6e73;
+
+  /* Border - More subtle separation */
+  --border: #d1d1d6;
+  --border-strong: #c7c7cc;
+  --border-hover: #8e8e93;
+  --input: #d1d1d6;
+
+  /* Accent - Apple SF Blue */
+  --accent: #007aff;
+  --accent-hover: #0071e3;
+  --accent-muted: #0071e3;
+  --accent-subtle: rgba(0, 122, 255, 0.1);
+  --accent-foreground: #ffffff;
+  --accent-glow: rgba(0, 122, 255, 0.2);
+  --primary: #007aff;
+  --primary-foreground: #ffffff;
+
+  /* Secondary - Apple system gray */
+  --secondary: #ebebf0;
+  --secondary-foreground: #3a3a3c;
+  --accent-2: #34c759;
+  --accent-2-muted: rgba(52, 199, 89, 0.75);
+  --accent-2-subtle: rgba(52, 199, 89, 0.1);
+
+  /* Semantic - Apple system colors */
+  --ok: #34c759;
+  --ok-muted: rgba(52, 199, 89, 0.75);
+  --ok-subtle: rgba(52, 199, 89, 0.1);
+  --destructive: #ff3b30;
+  --destructive-foreground: #ffffff;
+  --warn: #ff9500;
+  --warn-muted: rgba(255, 149, 0, 0.75);
+  --warn-subtle: rgba(255, 149, 0, 0.1);
+  --danger: #ff3b30;
+  --danger-muted: rgba(255, 59, 48, 0.75);
+  --danger-subtle: rgba(255, 59, 48, 0.1);
+  --info: #0a84ff;
+  
+  /* Sports-specific colors adjusted for light theme */
+  --lock: #30d158;
+  --longshot: #ff9f0a;
+  --trap: #ff453a;
+
+  /* Focus - With Apple-style blue highlight */
+  --focus: rgba(0, 122, 255, 0.2);
+  --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent), 0 0 16px var(--accent-glow);
+  --ring: #007aff;
+
+  /* Grid */
+  --grid-line: rgba(60, 60, 67, 0.08);
+
+  /* Apple-style shadows - More subtle and layered */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  --shadow-xl: 0 20px 32px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  --shadow-glow: 0 0 16px var(--accent-glow);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font: 400 14px/1.55 var(--font-body);
+  letter-spacing: -0.02em;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Theme transition */
+@keyframes theme-circle-transition {
+  0% {
+    clip-path: circle(0% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
+  }
+  100% {
+    clip-path: circle(150% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
+  }
+}
+
+html.theme-transition {
+  view-transition-name: theme;
+}
+
+html.theme-transition::view-transition-old(theme) {
+  mix-blend-mode: normal;
+  animation: none;
+  z-index: 1;
+}
+
+html.theme-transition::view-transition-new(theme) {
+  mix-blend-mode: normal;
+  z-index: 2;
+  animation: theme-circle-transition 0.4s var(--ease-out) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition::view-transition-old(theme),
+  html.theme-transition::view-transition-new(theme) {
+    animation: none !important;
+  }
+}
+
+draftclaw-app {
+  display: block;
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: var(--accent-subtle);
+  color: var(--text-strong);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Animations - Polished with spring feel */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dashboard-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse-subtle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(0, 255, 183, 0);
+  }
+  50% {
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+}
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(0, 255, 183, 0.4);
+  }
+  50% {
+    opacity: 0.9;
+    box-shadow: 0 0 20px 5px rgba(0, 255, 183, 0.2);
+  }
+}
+
+/* Stagger animation delays for grouped elements */
+.stagger-1 {
+  animation-delay: 0ms;
+}
+.stagger-2 {
+  animation-delay: 50ms;
+}
+.stagger-3 {
+  animation-delay: 100ms;
+}
+.stagger-4 {
+  animation-delay: 150ms;
+}
+.stagger-5 {
+  animation-delay: 200ms;
+}
+.stagger-6 {
+  animation-delay: 250ms;
+}
+
+/* Focus visible styles */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

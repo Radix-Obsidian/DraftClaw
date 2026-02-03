@@ -1,0 +1,94 @@
+name: 🐛 Bug Report
+description: File a bug report to help us improve DraftClaw
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! The more information you provide, the better we can help you.
+
+  - type: checkboxes
+    attributes:
+      label: Prerequisites
+      description: Please check the following before submitting a bug report
+      options:
+        - label: I have checked that this issue has not already been reported
+          required: true
+        - label: I am running the latest version of DraftClaw
+          required: true
+        - label: I have read the [CONTRIBUTING guidelines](../CONTRIBUTING.md)
+          required: true
+
+  - type: input
+    attributes:
+      label: DraftClaw Version
+      description: What version of DraftClaw are you running?
+      placeholder: "1.0.0-beta.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other (specify in environment details)
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Node.js Version
+      description: What version of Node.js are you running?
+      placeholder: "v22.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Current Behavior
+      description: A clear description of what the bug is
+      placeholder: "When I try to analyze NFL props, the app crashes..."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "The app should display NFL player props analysis..."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps To Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Run command '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Environment Details
+      description: |
+        Any additional environment details (GPU, RAM, etc.) or configuration
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Error Logs
+      description: If applicable, add error logs or screenshots
+      render: shell
+    validations:
+      required: false

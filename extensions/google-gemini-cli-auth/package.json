@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/google-gemini-cli-auth",
+  "version": "2026.2.1",
+  "description": "DraftClaw Gemini CLI OAuth provider plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

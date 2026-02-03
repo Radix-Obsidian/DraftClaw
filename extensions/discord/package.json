@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/discord",
+  "version": "2026.2.1",
+  "description": "DraftClaw Discord channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

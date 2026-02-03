@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/google-antigravity-auth",
+  "version": "2026.2.1",
+  "description": "DraftClaw Google Antigravity OAuth provider plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

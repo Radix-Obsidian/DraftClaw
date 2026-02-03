@@ -1,0 +1,107 @@
+# DraftClaw User Portal - Docker Compose Production Stack
+version: '3.8'
+
+services:
+  # User Portal API
+  portal:
+    build:
+      context: ../..
+      dockerfile: src/user-portal/Dockerfile
+    container_name: draftclaw-portal
+    restart: unless-stopped
+    ports:
+      - "${DRAFTCLAW_PORTAL_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/draftclaw_portal
+      - REDIS_URL=redis://redis:6379
+      - DRAFTCLAW_JWT_SECRET=${DRAFTCLAW_JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_PRO_MONTHLY=${STRIPE_PRICE_PRO_MONTHLY}
+      - STRIPE_PRICE_PRO_YEARLY=${STRIPE_PRICE_PRO_YEARLY}
+      - STRIPE_PRICE_ENTERPRISE_MONTHLY=${STRIPE_PRICE_ENTERPRISE_MONTHLY}
+      - STRIPE_PRICE_ENTERPRISE_YEARLY=${STRIPE_PRICE_ENTERPRISE_YEARLY}
+      - DRAFTCLAW_PORTAL_URL=${DRAFTCLAW_PORTAL_URL}
+      - DRAFTCLAW_PORTAL_ORIGIN=${DRAFTCLAW_PORTAL_ORIGIN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - draftclaw-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: draftclaw-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-draftclaw_secure_password}
+      - POSTGRES_DB=draftclaw_portal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - draftclaw-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d draftclaw_portal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for session caching
+  redis:
+    image: redis:7-alpine
+    container_name: draftclaw-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - draftclaw-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nginx Reverse Proxy (optional, for SSL termination)
+  nginx:
+    image: nginx:alpine
+    container_name: draftclaw-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - portal
+    networks:
+      - draftclaw-network
+    profiles:
+      - with-nginx
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  draftclaw-network:
+    driver: bridge

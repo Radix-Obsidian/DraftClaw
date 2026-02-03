@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/llm-task",
+  "version": "2026.2.1",
+  "description": "DraftClaw JSON-only LLM task plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

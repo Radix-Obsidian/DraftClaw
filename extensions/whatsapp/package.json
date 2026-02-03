@@ -1,0 +1,14 @@
+{
+  "name": "@draftclaw/whatsapp",
+  "version": "2026.2.1",
+  "description": "DraftClaw WhatsApp channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "draftclaw": "workspace:*"
+  },
+  "draftclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
