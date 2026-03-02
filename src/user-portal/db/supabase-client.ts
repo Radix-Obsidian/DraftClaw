@@ -23,7 +23,8 @@ export type DbUser = {
   password_hash: string | null;
   whatsapp_jid: string | null;
   whatsapp_linked: boolean;
-  subscription_tier: "free" | "pro" | "enterprise";
+  subscription_tier: "free" | "pro" | "goat" | "enterprise";
+  is_admin: boolean;
   stripe_customer_id: string | null;
   email_verified: boolean;
   email_verification_token: string | null;

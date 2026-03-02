@@ -13,6 +13,9 @@ export { userPortalRoutes } from "./api/routes.js";
 import { serve } from "@hono/node-server";
 import { userPortalRoutes } from "./api/routes.js";
 import { serviceManager } from "./services/service-manager.js";
+import { validateEnv } from "./infra/startup-checks.js";
+
+validateEnv();
 
 const PORT = parseInt(process.env.DRAFTCLAW_PORTAL_PORT || "3001", 10);
 

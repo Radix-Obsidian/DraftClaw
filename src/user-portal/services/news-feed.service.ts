@@ -1,7 +1,7 @@
-import { Pool } from 'pg';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { SportsDataApiService } from './sportsdata-api.service';
+import { pool } from '../db/pool.js';
 
 interface NewsArticle {
   id: string;
@@ -25,14 +25,10 @@ interface PlayerNews {
 }
 
 export class NewsFeedService {
-  private pool: Pool;
   private sportsDataApi: SportsDataApiService;
   private syncInterval: NodeJS.Timeout | null;
 
   constructor() {
-    this.pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-    });
     this.sportsDataApi = new SportsDataApiService();
     this.syncInterval = null;
   }
@@ -130,7 +126,7 @@ export class NewsFeedService {
   }
 
   private async saveArticles(articles: NewsArticle[]) {
-    const client = await this.pool.connect();
+    const client = await pool.connect();
     
     try {
       await client.query('BEGIN');
@@ -179,7 +175,7 @@ export class NewsFeedService {
   }
 
   private async savePlayerNews(newsItems: PlayerNews[]) {
-    const client = await this.pool.connect();
+    const client = await pool.connect();
     
     try {
       await client.query('BEGIN');
@@ -275,7 +271,7 @@ export class NewsFeedService {
       limit
     ];
 
-    const { rows } = await this.pool.query(query, params);
+    const { rows } = await pool.query(query, params);
     return rows;
   }
 }

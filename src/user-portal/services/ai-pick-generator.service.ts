@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { pool } from '../db/pool.js';
 import { logger } from '../utils/logger';
 
 interface OddsAnalysis {
@@ -23,14 +23,10 @@ interface NewsImpact {
 }
 
 export class AIPickGeneratorService {
-  private pool: Pool;
   private syncInterval: NodeJS.Timeout | null;
   private isGenerating: boolean;
 
   constructor() {
-    this.pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-    });
     this.syncInterval = null;
     this.isGenerating = false;
   }
@@ -64,7 +60,7 @@ export class AIPickGeneratorService {
     }
 
     this.isGenerating = true;
-    const client = await this.pool.connect();
+    const client = await pool.connect();
 
     try {
       logger.info('Starting AI pick generation...');
@@ -218,8 +214,14 @@ export class AIPickGeneratorService {
     const avgSharpLine = sharpMoneyline.reduce((sum, o) => sum + (o.american_odds || 0), 0) / sharpMoneyline.length;
     const avgRetailLine = retailMoneyline.reduce((sum, o) => sum + (o.american_odds || 0), 0) / retailMoneyline.length;
 
-    // Calculate edge (difference between sharp and retail)
-    const edge = Math.abs(avgRetailLine - avgSharpLine) / 10;
+    // EV calculation using vig-removed sharp probs (ported from extensions/draft-claw/src/analysis.ts)
+    const sharpOutcomes = sharpMoneyline.map((o: any) => ({ odds: o.american_odds || -110 }));
+    const decimalOdds = sharpOutcomes.map((o: any) => o.odds > 0 ? o.odds / 100 + 1 : 100 / Math.abs(o.odds) + 1);
+    const totalImplied = decimalOdds.reduce((s: number, d: number) => s + 1 / d, 0);
+    const trueProb = totalImplied > 0 ? (1 / decimalOdds[0]) / totalImplied : 0.5;
+    const retailDecimal = avgRetailLine > 0 ? avgRetailLine / 100 + 1 : 100 / Math.abs(avgRetailLine) + 1;
+    const evPct = (retailDecimal * trueProb - 1) * 100;
+    const edge = Math.max(0, evPct);
 
     // Find best odds
     const bestOddsEntry = retailMoneyline.reduce((best, current) => {
@@ -391,7 +393,7 @@ export class AIPickGeneratorService {
   async generatePicksOnDemand(): Promise<number> {
     await this.generatePicks();
     
-    const client = await this.pool.connect();
+    const client = await pool.connect();
     try {
       const result = await client.query(
         'SELECT COUNT(*) FROM picks WHERE is_active = true AND generated_at > NOW() - INTERVAL \'5 minutes\''

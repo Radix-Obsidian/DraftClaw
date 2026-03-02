@@ -36,6 +36,13 @@ export default function register(api: DraftClawPluginApi) {
     affiliates: config.affiliates ?? {},
   };
 
+  if (resolvedConfig.mockMode) {
+    api.log?.("warn", "[DraftClaw] MOCK MODE ACTIVE — live odds not fetched. Set mockMode: false and provide apiKey.");
+  }
+  if (!resolvedConfig.mockMode && !resolvedConfig.apiKey) {
+    throw new Error("[DraftClaw] apiKey is required when mockMode is false. Get a key at https://the-odds-api.com");
+  }
+
   const client = new DraftClawClient(resolvedConfig);
 
   api.registerTool(

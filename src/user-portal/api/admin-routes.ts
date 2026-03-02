@@ -3,6 +3,7 @@ import { authService } from "../auth/service.js";
 import { subscriptionService } from "../stripe/subscription-service.js";
 import { usageService } from "../usage/service.js";
 import { serviceManager } from "../services/service-manager.js";
+import { supabase } from "../db/supabase-client.js";
 
 const adminApp = new Hono();
 
@@ -15,10 +16,8 @@ async function adminAuthMiddleware(c: any, next: () => Promise<void>) {
     return c.json({ error: "Unauthorized" }, 401);
   }
   
-  // Check if user has admin role (goat tier or explicit admin flag)
-  // In production, use a proper admin role system
-  const subscription = await subscriptionService.getUserSubscription(result.user.id);
-  const isAdmin = subscription?.planId?.includes("goat") || 
+  // RBAC: check is_admin column or @draftclaw.ai email
+  const isAdmin = (result.user as any).isAdmin === true ||
     result.user.email?.endsWith("@draftclaw.ai");
   
   if (!isAdmin) {
@@ -29,36 +28,34 @@ async function adminAuthMiddleware(c: any, next: () => Promise<void>) {
   await next();
 }
 
-// In-memory stores for admin data (replace with database in production)
-const allUsers = new Map<string, any>();
-const allSubscriptions = new Map<string, any>();
-
 // ============ Admin Dashboard Routes ============
 
-// Get dashboard stats
+// Get dashboard stats (real database queries)
 adminApp.get("/api/admin/stats", adminAuthMiddleware, async (c) => {
-  // In production, these would be database queries
-  const stats = {
-    totalUsers: allUsers.size || 0,
-    activeSubscriptions: 0,
-    totalRevenue: 0,
-    newUsersToday: 0,
-    newUsersThisMonth: 0,
-    subscriptionsByPlan: {
-      free: 0,
-      pro_monthly: 0,
-      pro_yearly: 0,
-      goat_monthly: 0,
-      goat_yearly: 0,
-    },
-    usageStats: {
-      totalApiCalls: 0,
-      totalMessages: 0,
-      totalAiTokens: 0,
-    },
-  };
+  const [usersResult, subsResult] = await Promise.all([
+    supabase.from("users").select("id, subscription_tier, created_at", { count: "exact" }),
+    supabase.from("subscriptions").select("plan_id, status"),
+  ]);
+  const users = usersResult.data || [];
+  const subs = subsResult.data || [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  return c.json(stats);
+  const byPlan: Record<string, number> = { free: 0, pro_monthly: 0, pro_yearly: 0, goat_monthly: 0, goat_yearly: 0 };
+  let active = 0;
+  for (const s of subs) {
+    if (s.status === "active" || s.status === "trialing") active++;
+    if (s.plan_id in byPlan) byPlan[s.plan_id]++;
+  }
+
+  return c.json({
+    totalUsers: usersResult.count ?? users.length,
+    activeSubscriptions: active,
+    newUsersToday: users.filter((u) => new Date(u.created_at) >= today).length,
+    newUsersThisMonth: users.filter((u) => new Date(u.created_at) >= monthStart).length,
+    subscriptionsByPlan: byPlan,
+  });
 });
 
 // List all users with pagination
@@ -68,33 +65,20 @@ adminApp.get("/api/admin/users", adminAuthMiddleware, async (c) => {
   const search = c.req.query("search") || "";
   const tier = c.req.query("tier") || "";
 
-  // In production, this would be a database query with filtering
-  const users = Array.from(allUsers.values());
-  
-  let filtered = users;
-  if (search) {
-    const searchLower = search.toLowerCase();
-    filtered = filtered.filter(u => 
-      u.email?.toLowerCase().includes(searchLower) ||
-      u.phone?.includes(search)
-    );
-  }
-  if (tier) {
-    filtered = filtered.filter(u => u.subscriptionTier === tier);
-  }
+  let query = supabase
+    .from("users")
+    .select("id, email, phone, subscription_tier, is_admin, email_verified, created_at", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+  if (search) query = query.or(`email.ilike.%${search}%,phone.ilike.%${search}%`);
+  if (tier) query = query.eq("subscription_tier", tier);
 
-  const total = filtered.length;
-  const start = (page - 1) * limit;
-  const paginated = filtered.slice(start, start + limit);
+  const { data, count, error } = await query;
+  if (error) return c.json({ error: error.message }, 500);
 
   return c.json({
-    users: paginated,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    users: data || [],
+    pagination: { page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit) },
   });
 });
 
@@ -148,29 +132,20 @@ adminApp.get("/api/admin/subscriptions", adminAuthMiddleware, async (c) => {
   const status = c.req.query("status") || "";
   const planId = c.req.query("planId") || "";
 
-  // In production, this would be a database query
-  const subscriptions = Array.from(allSubscriptions.values());
-  
-  let filtered = subscriptions;
-  if (status) {
-    filtered = filtered.filter(s => s.status === status);
-  }
-  if (planId) {
-    filtered = filtered.filter(s => s.planId === planId);
-  }
+  let query = supabase
+    .from("subscriptions")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+  if (status) query = query.eq("status", status);
+  if (planId) query = query.eq("plan_id", planId);
 
-  const total = filtered.length;
-  const start = (page - 1) * limit;
-  const paginated = filtered.slice(start, start + limit);
+  const { data, count, error } = await query;
+  if (error) return c.json({ error: error.message }, 500);
 
   return c.json({
-    subscriptions: paginated,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    subscriptions: data || [],
+    pagination: { page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit) },
   });
 });
 
@@ -180,13 +155,12 @@ adminApp.post("/api/admin/subscriptions/:subscriptionId/cancel", adminAuthMiddle
   const body = await c.req.json();
   const immediately = body.immediately === true;
 
-  // Find subscription by ID
-  const subscription = allSubscriptions.get(subscriptionId);
+  const { data: subscription } = await supabase.from("subscriptions").select("user_id").eq("id", subscriptionId).single();
   if (!subscription) {
     return c.json({ error: "Subscription not found" }, 404);
   }
 
-  const result = await subscriptionService.cancelSubscription(subscription.userId, immediately);
+  const result = await subscriptionService.cancelSubscription(subscription.user_id, immediately);
 
   if (!result.success) {
     return c.json({ error: result.error }, 400);
@@ -255,8 +229,8 @@ adminApp.get("/api/admin/analytics/revenue", adminAuthMiddleware, async (c) => {
     revenueByPlan: {
       pro_monthly: 0,
       pro_yearly: 0,
-      enterprise_monthly: 0,
-      enterprise_yearly: 0,
+      goat_monthly: 0,
+      goat_yearly: 0,
     },
   };
 
