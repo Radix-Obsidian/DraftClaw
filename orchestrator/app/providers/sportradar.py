@@ -31,15 +31,15 @@ BASE_URL = "https://api.sportradar.com"
 # Maps our canonical sport keys to Sportradar path fragments.
 SPORT_ENDPOINTS: dict[str, str] = {
     "basketball_nba": "/basketball/trial/v8/en/odds/pre-match/events.json",
-    "soccer": "/soccer/trial/v4/en/odds/pre-match/events.json",
-    "mma": "/mma/trial/v2/en/odds/pre-match/events.json",
+    "soccer_epl": "/soccer/trial/v4/en/odds/pre-match/events.json",
+    "mma_mixed_martial_arts": "/mma/trial/v2/en/odds/pre-match/events.json",
 }
 
 # Per-sport API key override support.
 _SPORT_KEY_MAP: dict[str, str] = {
     "basketball_nba": "sportradar_nba_api_key",
-    "soccer": "sportradar_soccer_api_key",
-    "mma": "sportradar_api_key",
+    "soccer_epl": "sportradar_soccer_api_key",
+    "mma_mixed_martial_arts": "sportradar_mma_api_key",
 }
 
 

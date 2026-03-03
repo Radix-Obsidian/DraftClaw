@@ -99,8 +99,8 @@ services:
   # Python LangGraph Orchestrator
   orchestrator:
     build:
-      context: ../..
-      dockerfile: orchestrator/Dockerfile
+      context: ../../orchestrator
+      dockerfile: Dockerfile
     container_name: draftclaw-orchestrator
     restart: unless-stopped
     ports:
@@ -111,7 +111,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ODDS_API_KEY=${ODDS_API_KEY}
       - ORCHESTRATOR_API_KEY=${ORCHESTRATOR_API_KEY}
-      - SPORTRADAR_BASKETBALL_API_KEY=${SPORTRADAR_BASKETBALL_API_KEY}
+      - SPORTRADAR_NBA_API_KEY=${SPORTRADAR_NBA_API_KEY}
       - SPORTRADAR_SOCCER_API_KEY=${SPORTRADAR_SOCCER_API_KEY}
       - SPORTRADAR_MMA_API_KEY=${SPORTRADAR_MMA_API_KEY}
       - SPORTSDATA_API_KEY=${SPORTSDATA_API_KEY}

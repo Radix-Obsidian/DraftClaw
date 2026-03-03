@@ -29,7 +29,7 @@ jobs:
           cache-to: type=gha,mode=max
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: orchestrator
           file: orchestrator/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/orchestrator:${{ github.sha }}

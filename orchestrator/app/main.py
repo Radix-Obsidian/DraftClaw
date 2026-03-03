@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 
 from .db import get_pool, close_pool
+from .redis_client import close_redis
 from .routes.health import router as health_router
 from .routes.triggers import router as triggers_router
 
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Orchestrator shutting down...")
     await close_pool()
+    await close_redis()
 
 
 app = FastAPI(
