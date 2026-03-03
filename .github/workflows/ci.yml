@@ -586,6 +586,21 @@ jobs:
             sys.exit(1)
           PY
 
+  orchestrator:
+    name: Python Orchestrator Tests
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install uv
+      - run: uv pip install --system -e ".[dev]"
+      - run: pytest tests/ -v --tb=short
+
   android:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:

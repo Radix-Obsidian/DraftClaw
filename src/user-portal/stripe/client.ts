@@ -1,4 +1,5 @@
 import { request } from "undici";
+import { createHmac } from "node:crypto";
 
 // Stripe API configuration
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
@@ -246,7 +247,6 @@ export class StripeClient {
       }
 
       // Compute expected signature
-      const { createHmac } = require("node:crypto");
       const signedPayload = `${timestamp}.${payload}`;
       const expectedSignature = createHmac("sha256", STRIPE_WEBHOOK_SECRET)
         .update(signedPayload)

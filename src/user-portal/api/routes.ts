@@ -10,12 +10,39 @@ import { adminRoutes } from "./admin-routes.js";
 const app = new Hono();
 
 // CORS middleware
+const corsOrigin = process.env.DRAFTCLAW_PORTAL_ORIGIN || "https://draftclaw.ai";
+if (process.env.NODE_ENV === "production" && !process.env.DRAFTCLAW_PORTAL_ORIGIN) {
+  console.warn("[WARN] DRAFTCLAW_PORTAL_ORIGIN not set — defaulting to https://draftclaw.ai");
+}
 app.use("/*", cors({
-  origin: process.env.DRAFTCLAW_PORTAL_ORIGIN || "*",
+  origin: corsOrigin,
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
   credentials: true,
 }));
+
+// Rate limiter (per IP)
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+function makeRateLimiter(maxRequests: number, windowMs: number) {
+  return async (c: any, next: () => Promise<void>) => {
+    const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+    const key = `${c.req.path}:${ip}`;
+    const now = Date.now();
+    let entry = rateLimitStore.get(key);
+    if (!entry || now > entry.resetAt) {
+      entry = { count: 0, resetAt: now + windowMs };
+      rateLimitStore.set(key, entry);
+    }
+    entry.count++;
+    if (entry.count > maxRequests) {
+      return c.json({ error: "Too many requests", retryAfter: Math.ceil((entry.resetAt - now) / 1000) }, 429);
+    }
+    await next();
+  };
+}
+app.use("/api/auth/login", makeRateLimiter(10, 60_000));
+app.use("/api/auth/register", makeRateLimiter(5, 3_600_000));
+app.use("/api/auth/refresh", makeRateLimiter(30, 60_000));
 
 // Auth middleware
 async function authMiddleware(c: any, next: () => Promise<void>) {

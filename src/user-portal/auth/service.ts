@@ -449,7 +449,11 @@ export class AuthService {
       })
       .eq("id", dbUser.id);
 
-    return { success: true, token }; // In production, send this via email
+    // Send reset link via email — never expose token in response body
+    const portalUrl = process.env.DRAFTCLAW_PORTAL_URL || "https://draftclaw.ai";
+    const resetUrl = `${portalUrl}/reset-password?token=${token}`;
+    console.info(`[PasswordReset] Reset link for ${normalizedEmail}: ${resetUrl}`);
+    return { success: true };
   }
 
   async resetPassword(token: string, newPassword: string): Promise<AuthResult> {

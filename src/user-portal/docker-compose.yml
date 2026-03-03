@@ -96,10 +96,47 @@ services:
     profiles:
       - with-nginx
 
+  # Python LangGraph Orchestrator
+  orchestrator:
+    build:
+      context: ../../orchestrator
+      dockerfile: Dockerfile
+    container_name: draftclaw-orchestrator
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/draftclaw_portal
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - ORCHESTRATOR_API_KEY=${ORCHESTRATOR_API_KEY}
+      - SPORTRADAR_NBA_API_KEY=${SPORTRADAR_NBA_API_KEY}
+      - SPORTRADAR_SOCCER_API_KEY=${SPORTRADAR_SOCCER_API_KEY}
+      - SPORTRADAR_MMA_API_KEY=${SPORTRADAR_MMA_API_KEY}
+      - SPORTSDATA_API_KEY=${SPORTSDATA_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - draftclaw-network
+    volumes:
+      - orchestrator_models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  orchestrator_models:
     driver: local
 
 networks:

@@ -16,7 +16,13 @@ export interface TokenPair {
   expiresAt: Date;
 }
 
-const JWT_SECRET = process.env.DRAFTCLAW_JWT_SECRET || process.env.JWT_SECRET || "draftclaw-dev-secret-change-in-production";
+const _JWT_SECRET_RAW = process.env.DRAFTCLAW_JWT_SECRET || process.env.JWT_SECRET;
+if (!_JWT_SECRET_RAW) {
+  throw new Error(
+    'DRAFTCLAW_JWT_SECRET is required. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+  );
+}
+const JWT_SECRET = _JWT_SECRET_RAW;
 const ACCESS_TOKEN_EXPIRY = 15 * 60; // 15 minutes in seconds
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 

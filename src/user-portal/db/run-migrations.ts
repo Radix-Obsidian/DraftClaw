@@ -1,52 +1,69 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { supabase } from "./supabase-client.js";
+import { Pool } from "pg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const migrations = [
+  "001_initial_schema.sql",
+  "002_sports_data_schema.sql",
+  "003_news_and_optimization.sql",
+  "004_pick_expiration_cleanup.sql",
+  "005_picks_compat.sql",
+  "006_goat_tier_fix.sql",
+  "007_admin_rbac.sql",
+];
+
 async function runMigrations() {
-  console.log("🚀 Running DraftClaw database migrations...\n");
+  console.log("Running DraftClaw database migrations...\n");
 
-  const migrations = [
-    "001_initial_schema.sql",
-    "002_picks_schema.sql",
-  ];
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS _migrations (
+        name VARCHAR(255) PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
 
-  for (const migration of migrations) {
-    const filePath = join(__dirname, "migrations", migration);
-    console.log(`📄 Applying migration: ${migration}`);
-
-    try {
-      const sql = readFileSync(filePath, "utf-8");
-      
-      // Split by semicolons but handle functions that contain semicolons
-      const statements = splitSqlStatements(sql);
-
-      for (const statement of statements) {
-        const trimmed = statement.trim();
-        if (!trimmed || trimmed.startsWith("--")) continue;
-
-        const { error } = await supabase.rpc("exec_sql", { sql_query: trimmed });
-        
-        if (error) {
-          // Try direct execution for DDL statements
-          const { error: directError } = await supabase.from("_migrations_check").select("*").limit(0);
-          if (directError?.code === "42P01") {
-            // Table doesn't exist, which is fine for first run
-          }
-          console.warn(`   ⚠️  Statement warning: ${error.message}`);
-        }
+    for (const migration of migrations) {
+      const { rows } = await client.query("SELECT 1 FROM _migrations WHERE name = $1", [migration]);
+      if (rows.length > 0) {
+        console.log(`  Skipping (already applied): ${migration}`);
+        continue;
       }
 
-      console.log(`   ✅ Migration applied successfully\n`);
-    } catch (err) {
-      console.error(`   ❌ Failed to apply migration: ${err}`);
-      process.exit(1);
+      const filePath = join(__dirname, "migrations", migration);
+      console.log(`  Applying: ${migration}`);
+
+      try {
+        const sql = readFileSync(filePath, "utf-8");
+        const statements = splitSqlStatements(sql);
+
+        await client.query("BEGIN");
+        for (const statement of statements) {
+          const trimmed = statement.trim();
+          if (!trimmed || trimmed.startsWith("--")) continue;
+          await client.query(trimmed);
+        }
+        await client.query("INSERT INTO _migrations(name, applied_at) VALUES ($1, NOW())", [migration]);
+        await client.query("COMMIT");
+        console.log(`  Applied successfully\n`);
+      } catch (err) {
+        await client.query("ROLLBACK");
+        console.error(`  FAILED: ${migration}: ${err}`);
+        process.exit(1);
+      }
     }
+  } finally {
+    client.release();
+    await pool.end();
   }
 
-  console.log("✨ All migrations completed!");
+  console.log("All migrations completed!");
 }
 
 function splitSqlStatements(sql: string): string[] {
@@ -55,10 +72,7 @@ function splitSqlStatements(sql: string): string[] {
   let inFunction = false;
   let dollarQuote = "";
 
-  const lines = sql.split("\n");
-
-  for (const line of lines) {
-    // Check for dollar-quoted strings (used in functions)
+  for (const line of sql.split("\n")) {
     const dollarMatch = line.match(/\$([a-zA-Z_]*)\$/);
     if (dollarMatch) {
       if (!inFunction) {
@@ -69,22 +83,14 @@ function splitSqlStatements(sql: string): string[] {
         dollarQuote = "";
       }
     }
-
     current += line + "\n";
-
-    // Only split on semicolons if not inside a function
     if (!inFunction && line.trim().endsWith(";")) {
       statements.push(current.trim());
       current = "";
     }
   }
-
-  if (current.trim()) {
-    statements.push(current.trim());
-  }
-
+  if (current.trim()) statements.push(current.trim());
   return statements;
 }
 
-// Run if executed directly
 runMigrations().catch(console.error);
