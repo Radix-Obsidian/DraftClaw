@@ -41,6 +41,63 @@ function ConnectionBadge() {
     );
 }
 
+function OpportunityCard({ opp }: { opp: BettingOpportunity }) {
+    const { updateOpportunityStatus } = useAppStore();
+    const sportStyle = SPORT_COLORS[opp.sport] || DEFAULT_SPORT_COLOR;
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
+            className="px-4 py-3 border-b border-[var(--color-border)] flex flex-col gap-2"
+        >
+            <div className="flex items-center justify-between gap-2">
+                <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wider border ${sportStyle.bg} ${sportStyle.text} ${sportStyle.border}`}>
+                    {opp.sport}
+                </span>
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border ${evBadge(opp.ev)}`}>
+                    <TrendingUp size={12} className={opp.ev >= 0.1 ? 'animate-pulse' : ''} />
+                    <span className="mono text-[13px] font-bold">+{(opp.ev * 100).toFixed(1)}%</span>
+                </div>
+            </div>
+            <div>
+                <div className="text-[14px] font-medium text-[var(--color-text-primary)] tracking-tight">{opp.game}</div>
+                <div className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">{opp.team} · {opp.betType} · {opp.bookmaker}</div>
+            </div>
+            <div className="flex items-center gap-4 text-[12px]">
+                <div className="flex items-baseline gap-1">
+                    <span className="text-[var(--color-text-tertiary)] font-medium">Sharp:</span>
+                    <span className="mono font-semibold text-[var(--color-text-primary)]">{formatOdds(opp.sharpLine)}</span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                    <span className="text-[var(--color-text-tertiary)] font-medium">Retail:</span>
+                    <span className="mono font-semibold text-[var(--color-text-secondary)]">{formatOdds(opp.retailLine)}</span>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                    {opp.deepLink && (
+                        <a
+                            href={opp.deepLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={() => updateOpportunityStatus(opp.id, 'placed')}
+                            className="flex items-center justify-center gap-1.5 text-[12px] font-semibold px-4 py-1.5 bg-[var(--color-system-blue)] text-white rounded-full ios-active"
+                        >
+                            Open
+                        </a>
+                    )}
+                    <button
+                        onClick={() => updateOpportunityStatus(opp.id, 'skipped')}
+                        className="text-[12px] font-medium px-4 py-1.5 text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-full ios-active"
+                    >
+                        Hide
+                    </button>
+                </div>
+            </div>
+        </motion.div>
+    );
+}
+
 function OpportunityRow({ opp }: { opp: BettingOpportunity }) {
     const { updateOpportunityStatus } = useAppStore();
     const sportStyle = SPORT_COLORS[opp.sport] || DEFAULT_SPORT_COLOR;
@@ -186,27 +243,39 @@ export function LiveOddsBoard() {
                         </div>
                     </div>
                 ) : (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 mac-material-elevated z-20 shadow-sm border-b border-[var(--color-border)]">
-                            <tr>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-20">Sport</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-56">Matchup</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Market</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Sharp</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Retail</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-36">Edge (EV)</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Book</th>
-                                <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide text-right w-40">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--color-border)] bg-[var(--color-bg-base)]">
+                    <>
+                        {/* Mobile card list */}
+                        <div className="block md:hidden divide-y divide-[var(--color-border)]">
                             <AnimatePresence mode="popLayout">
                                 {filtered.map((opp) => (
-                                    <OpportunityRow key={opp.id} opp={opp} />
+                                    <OpportunityCard key={opp.id} opp={opp} />
                                 ))}
                             </AnimatePresence>
-                        </tbody>
-                    </table>
+                        </div>
+
+                        {/* Desktop table */}
+                        <table className="hidden md:table w-full text-left border-collapse">
+                            <thead className="sticky top-0 mac-material-elevated z-20 shadow-sm border-b border-[var(--color-border)]">
+                                <tr>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-20">Sport</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-56">Matchup</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Market</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Sharp</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Retail</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-36">Edge (EV)</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide w-28">Book</th>
+                                    <th className="py-2 px-3 text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide text-right w-40">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--color-border)] bg-[var(--color-bg-base)]">
+                                <AnimatePresence mode="popLayout">
+                                    {filtered.map((opp) => (
+                                        <OpportunityRow key={opp.id} opp={opp} />
+                                    ))}
+                                </AnimatePresence>
+                            </tbody>
+                        </table>
+                    </>
                 )}
             </div>
         </div>

@@ -1,0 +1,15 @@
+{
+  "name": "DraftClaw War Room",
+  "short_name": "DraftClaw",
+  "description": "Live EV scanner and betting command center",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/draftclaw-icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

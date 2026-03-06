@@ -8,7 +8,7 @@ import {
 
 type Tab = AppState['activeTab'];
 
-const NAV_ITEMS: { id: Tab; icon: React.ReactNode; label: string; badge?: string }[] = [
+export const NAV_ITEMS: { id: Tab; icon: React.ReactNode; label: string; badge?: string }[] = [
     { id: 'war-room', icon: <Crosshair size={18} />, label: 'War Room' },
     { id: 'alerts', icon: <Flame size={18} />, label: 'Alerts', badge: 'LIVE' },
     { id: 'bankroll', icon: <TrendingUp size={18} />, label: 'Bankroll' },
@@ -31,7 +31,7 @@ export function Sidebar() {
         <motion.aside
             animate={{ width: collapsed ? 64 : 220 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="flex flex-col shrink-0 h-full border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] overflow-hidden z-30"
+            className="hidden md:flex flex-col shrink-0 h-full border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] overflow-hidden z-30"
         >
             {/* ── Logo / Brand ──────────────────────────────────────────── */}
             <div className="flex items-center gap-3 h-14 px-3.5 border-b border-[var(--color-border)] overflow-hidden">

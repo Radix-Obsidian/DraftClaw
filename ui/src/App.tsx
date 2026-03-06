@@ -7,6 +7,7 @@ import { AlertFeed } from './components/AlertFeed';
 import { BankrollChart } from './components/BankrollChart';
 import { ConfigPanel } from './components/ConfigPanel';
 import { LogViewer } from './components/LogViewer';
+import { BottomNav } from './components/BottomNav';
 import { useGateway } from './hooks/useGateway';
 import { Crosshair, TrendingUp, Flame, Settings, Terminal } from 'lucide-react';
 
@@ -109,10 +110,11 @@ export default function App() {
         )}
 
         {/* Page content */}
-        <main className="flex-1 overflow-hidden relative z-10 bg-[var(--color-bg-base)]">
+        <main className="flex-1 overflow-hidden relative z-10 bg-[var(--color-bg-base)] pb-14 md:pb-0">
           <PageContent tab={activeTab} />
         </main>
       </div>
+      <BottomNav />
     </div>
   );
 }
